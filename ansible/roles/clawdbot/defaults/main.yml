@@ -42,3 +42,7 @@ clawdbot_ssh_keys: []
 # Anthropic API key for AI model access
 # Passed via --extra-vars from the creator API
 anthropic_api_key: ""
+
+# Wayfinder API key for Wayfinder Paths SDK
+# Passed via --extra-vars from the creator API
+wayfinder_api_key: ""

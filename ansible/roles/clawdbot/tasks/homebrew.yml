@@ -1,0 +1,13 @@
+---
+- name: Install Homebrew as clawdbot user
+  ansible.builtin.shell:
+    cmd: |
+      NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    creates: /home/linuxbrew/.linuxbrew/bin/brew
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+
+- name: Add Homebrew to PATH for current session
+  ansible.builtin.set_fact:
+    ansible_env: "{{ ansible_env | combine({'PATH': '/home/linuxbrew/.linuxbrew/bin:' + ansible_env.PATH}) }}"

@@ -8,6 +8,9 @@
 - name: Include user creation tasks
   ansible.builtin.include_tasks: user.yml
 
+- name: Include Homebrew installation tasks
+  ansible.builtin.include_tasks: homebrew.yml
+
 - name: Include Docker installation tasks
   ansible.builtin.include_tasks: docker.yml
 
@@ -19,3 +22,6 @@
 
 - name: Include Clawdbot setup tasks
   ansible.builtin.include_tasks: clawdbot.yml
+
+- name: Include Wayfinder Paths SDK setup tasks
+  ansible.builtin.include_tasks: wayfinder.yml

@@ -28,6 +28,7 @@ type ProvisionOpts struct {
 	IP              string
 	SSHPublicKey    string
 	AnthropicAPIKey string
+	WayfinderAPIKey string
 }
 
 func (p *Provisioner) WaitForSSH(ip string) error {
@@ -48,7 +49,12 @@ func (p *Provisioner) WaitForSSH(ip string) error {
 	return fmt.Errorf("SSH not ready after 5m at %s", addr)
 }
 
-func (p *Provisioner) RunPlaybook(opts ProvisionOpts) error {
+// ProvisionResult holds outputs extracted from provisioning.
+type ProvisionResult struct {
+	WalletAddress string
+}
+
+func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) {
 	slog.Info("starting provisioning", "ip", opts.IP)
 
 	// Write a temporary inventory file
@@ -56,13 +62,13 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) error {
 
 	inventoryFile, err := os.CreateTemp("", "inventory-*.ini")
 	if err != nil {
-		return fmt.Errorf("create temp inventory: %w", err)
+		return nil, fmt.Errorf("create temp inventory: %w", err)
 	}
 	defer os.Remove(inventoryFile.Name())
 
 	if _, err := inventoryFile.WriteString(inventoryContent); err != nil {
 		inventoryFile.Close()
-		return fmt.Errorf("write inventory: %w", err)
+		return nil, fmt.Errorf("write inventory: %w", err)
 	}
 	inventoryFile.Close()
 
@@ -80,11 +86,15 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		slog.Error("provisioning failed", "ip", opts.IP, "error", err, "output", string(output))
-		return fmt.Errorf("ansible-playbook: %w\n%s", err, string(output))
+		return nil, fmt.Errorf("ansible-playbook: %w\n%s", err, string(output))
 	}
 
-	slog.Info("provisioning completed", "ip", opts.IP)
-	return nil
+	result := &ProvisionResult{
+		WalletAddress: parseWalletAddress(string(output)),
+	}
+
+	slog.Info("provisioning completed", "ip", opts.IP, "wallet_address", result.WalletAddress)
+	return result, nil
 }
 
 func (p *Provisioner) buildExtraVars(opts ProvisionOpts) string {
@@ -95,6 +105,9 @@ func (p *Provisioner) buildExtraVars(opts ProvisionOpts) string {
 	}
 	if opts.AnthropicAPIKey != "" {
 		vars["anthropic_api_key"] = opts.AnthropicAPIKey
+	}
+	if opts.WayfinderAPIKey != "" {
+		vars["wayfinder_api_key"] = opts.WayfinderAPIKey
 	}
 	if len(vars) == 0 {
 		return ""
@@ -107,6 +120,18 @@ func (p *Provisioner) buildExtraVars(opts ProvisionOpts) string {
 		return ""
 	}
 	return string(b)
+}
+
+func parseWalletAddress(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if idx := strings.Index(line, "WALLET_ADDRESS="); idx >= 0 {
+			addr := strings.TrimSpace(line[idx+len("WALLET_ADDRESS="):])
+			// Strip trailing quote if Ansible wraps it
+			addr = strings.Trim(addr, "\"'")
+			return addr
+		}
+	}
+	return ""
 }
 
 func expandHome(path string) string {

@@ -61,16 +61,21 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 
 	// Kick off Ansible provisioning in the background
 	go func(id int64, opts ProvisionOpts) {
-		if err := s.provisioner.RunPlaybook(opts); err != nil {
+		result, err := s.provisioner.RunPlaybook(opts)
+		if err != nil {
 			slog.Error("provisioning failed", "server_id", id, "error", err)
 			s.tracker.UpdateStatus(id, "failed", false)
 			return
+		}
+		if result.WalletAddress != "" {
+			s.tracker.SetWalletAddress(id, result.WalletAddress)
 		}
 		s.tracker.UpdateStatus(id, "ready", true)
 	}(info.ID, ProvisionOpts{
 		IP:              info.IPv4,
 		SSHPublicKey:    req.SSHPublicKey,
 		AnthropicAPIKey: req.AnthropicAPIKey,
+		WayfinderAPIKey: req.WayfinderAPIKey,
 	})
 
 	writeJSON(w, http.StatusAccepted, CreateServerResponse{
@@ -95,11 +100,12 @@ func (s *Server) handleGetServer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, ServerStatusResponse{
-		ID:          info.ID,
-		Name:        info.Name,
-		Status:      info.Status,
-		IPv4:        info.IPv4,
-		Provisioned: info.Provisioned,
+		ID:            info.ID,
+		Name:          info.Name,
+		Status:        info.Status,
+		IPv4:          info.IPv4,
+		Provisioned:   info.Provisioned,
+		WalletAddress: info.WalletAddress,
 	})
 }
 

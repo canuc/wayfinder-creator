@@ -60,21 +60,7 @@
         chdir: "{{ playbook_dir }}"
       delegate_to: localhost
       become: false
-      run_once: true
       changed_when: false
-
-    - name: Install Homebrew
-      ansible.builtin.shell:
-        cmd: |
-          NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        creates: /home/linuxbrew/.linuxbrew/bin/brew
-        executable: /bin/bash
-      become: false
-
-    - name: Add Homebrew to PATH for current session
-      ansible.builtin.set_fact:
-        ansible_env: "{{ ansible_env | combine({'PATH': '/home/linuxbrew/.linuxbrew/bin:' + ansible_env.PATH}) }}"
-      when: is_linux
 
   roles:
     - clawdbot

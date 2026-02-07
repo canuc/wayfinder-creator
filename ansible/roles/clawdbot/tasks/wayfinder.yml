@@ -1,0 +1,59 @@
+---
+- name: Install Python 3.12 and venv
+  ansible.builtin.apt:
+    name:
+      - python3.12
+      - python3.12-venv
+    state: present
+
+- name: Clone wayfinder-paths-sdk
+  ansible.builtin.git:
+    repo: https://github.com/WayfinderFoundation/wayfinder-paths-sdk.git
+    dest: "{{ clawdbot_home }}/wayfinder-paths-sdk"
+    version: main
+  become: true
+  become_user: "{{ clawdbot_user }}"
+
+- name: Run wayfinder setup script
+  ansible.builtin.shell:
+    cmd: python3 scripts/setup.py --non-interactive
+    chdir: "{{ clawdbot_home }}/wayfinder-paths-sdk"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  environment:
+    WAYFINDER_API_KEY: "{{ wayfinder_api_key }}"
+    PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+    HOME: "{{ clawdbot_home }}"
+
+- name: Set Wayfinder API key in config.json
+  ansible.builtin.shell:
+    cmd: |
+      python3 -c "
+      import json
+      with open('config.json') as f:
+          cfg = json.load(f)
+      cfg['system']['api_key'] = '{{ wayfinder_api_key }}'
+      with open('config.json', 'w') as f:
+          json.dump(cfg, f, indent=2)
+      "
+    chdir: "{{ clawdbot_home }}/wayfinder-paths-sdk"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  when: wayfinder_api_key | length > 0
+
+- name: Read wallet address from config.json
+  ansible.builtin.shell:
+    cmd: python3 -c "import json; cfg=json.load(open('config.json')); wallets=[w for w in cfg.get('wallets',[]) if w.get('label')=='main']; print(wallets[0]['address'] if wallets else '')"
+    chdir: "{{ clawdbot_home }}/wayfinder-paths-sdk"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  register: wallet_result
+  changed_when: false
+
+- name: Display wallet address
+  ansible.builtin.debug:
+    msg: "WALLET_ADDRESS={{ wallet_result.stdout }}"
+  when: wallet_result.stdout | length > 0
