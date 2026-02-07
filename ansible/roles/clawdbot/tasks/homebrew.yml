@@ -1,4 +1,12 @@
 ---
+- name: Create Homebrew prefix directory
+  ansible.builtin.file:
+    path: /home/linuxbrew/.linuxbrew
+    state: directory
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+    mode: '0755'
+
 - name: Install Homebrew as clawdbot user
   ansible.builtin.shell:
     cmd: |

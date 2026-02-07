@@ -83,14 +83,43 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 	cmd := exec.Command("ansible-playbook", args...)
 	cmd.Dir = p.ansibleDir
 
-	output, err := cmd.CombinedOutput()
+	// Stream output in real-time via a pipe
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		slog.Error("provisioning failed", "ip", opts.IP, "error", err, "output", string(output))
-		return nil, fmt.Errorf("ansible-playbook: %w\n%s", err, string(output))
+		return nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+	cmd.Stderr = cmd.Stdout // merge stderr into stdout
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start ansible-playbook: %w", err)
+	}
+
+	var output strings.Builder
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := stdout.Read(buf)
+		if n > 0 {
+			chunk := string(buf[:n])
+			output.WriteString(chunk)
+			// Log each line for real-time visibility
+			for _, line := range strings.Split(strings.TrimRight(chunk, "\n"), "\n") {
+				if line != "" {
+					slog.Info("ansible", "ip", opts.IP, "out", line)
+				}
+			}
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	if err := cmd.Wait(); err != nil {
+		slog.Error("provisioning failed", "ip", opts.IP, "error", err)
+		return nil, fmt.Errorf("ansible-playbook: %w\n%s", err, output.String())
 	}
 
 	result := &ProvisionResult{
-		WalletAddress: parseWalletAddress(string(output)),
+		WalletAddress: parseWalletAddress(output.String()),
 	}
 
 	slog.Info("provisioning completed", "ip", opts.IP, "wallet_address", result.WalletAddress)

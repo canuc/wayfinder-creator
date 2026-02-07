@@ -76,10 +76,12 @@
     executable: /bin/bash
   args:
     creates: /home/linuxbrew/.linuxbrew/bin/poetry
+  become: true
+  become_user: "{{ clawdbot_user }}"
 
 - name: Create skills directory
   ansible.builtin.file:
-    path: "{{ clawdbot_config_dir }}/skills"
+    path: "{{ clawdbot_config_dir }}/skills/wayfinder"
     state: directory
     owner: "{{ clawdbot_user }}"
     group: "{{ clawdbot_user }}"
@@ -88,7 +90,7 @@
 - name: Copy wayfinder skill to server and unzip
   ansible.builtin.unarchive:
     src: wayfinder.skill
-    dest: "{{ clawdbot_config_dir }}/skills"
+    dest: "{{ clawdbot_config_dir }}/skills/wayfinder"
     owner: "{{ clawdbot_user }}"
     group: "{{ clawdbot_user }}"
 
@@ -118,14 +120,15 @@
     command: "{{ clawdbot_home }}/.local/bin/clawdbot onboard --install-daemon"
     responses:
       "Continue\\?": "y"
-      "Onboarding mode": ""
-      "QuickStart": ""
-      "Model/auth provider": ""
-      "Anthropic auth method": ""
+      "Onboarding mode": "\r"
+      "Model/auth provider": "\x1b[B\r"
+      "Anthropic auth method": "\x1b[B\r"
       "Use existing ANTHROPIC_API_KEY": "y"
-      "Install daemon": "y"
-      "Start daemon": "y"
-    timeout: 120
+      "Default model": "\r"
+      "Select channel": "\x1b[A\r"
+      "Enable hooks\\?": " \r"
+      "Configure skills now\\?": "n"
+    timeout: 400
   become: true
   become_user: "{{ clawdbot_user }}"
   environment:
