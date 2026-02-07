@@ -1,0 +1,4 @@
+---
+- name: Include Linux firewall configuration
+  ansible.builtin.include_tasks: firewall-linux.yml
+  when: ansible_os_family == 'Debian'

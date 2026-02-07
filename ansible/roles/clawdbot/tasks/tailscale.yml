@@ -1,0 +1,4 @@
+---
+- name: Include Linux Tailscale installation
+  ansible.builtin.include_tasks: tailscale-linux.yml
+  when: ansible_os_family == 'Debian'

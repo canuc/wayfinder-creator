@@ -1,0 +1,41 @@
+---
+- name: Include Linux system tools installation
+  ansible.builtin.include_tasks: system-tools-linux.yml
+  when: ansible_os_family == 'Debian'
+
+- name: Display unsupported OS warning
+  ansible.builtin.fail:
+    msg: "Unsupported OS family: {{ ansible_os_family }}. Only Debian/Ubuntu is supported."
+  when: ansible_os_family not in ['Debian']
+
+# Common tasks for all operating systems
+
+- name: Install oh-my-zsh for clawdbot user
+  ansible.builtin.shell:
+    cmd: |
+      sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    creates: "{{ clawdbot_home }}/.oh-my-zsh"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  environment:
+    HOME: "{{ clawdbot_home }}"
+    USER: "{{ clawdbot_user }}"
+
+- name: Configure git globally
+  community.general.git_config:
+    name: "{{ item.name }}"
+    scope: global
+    value: "{{ item.value }}"
+  loop:
+    - { name: 'init.defaultBranch', value: 'main' }
+    - { name: 'pull.rebase', value: 'false' }
+    - { name: 'core.editor', value: 'vim' }
+    - { name: 'color.ui', value: 'auto' }
+    - { name: 'alias.st', value: 'status' }
+    - { name: 'alias.co', value: 'checkout' }
+    - { name: 'alias.br', value: 'branch' }
+    - { name: 'alias.ci', value: 'commit' }
+    - { name: 'alias.unstage', value: 'reset HEAD --' }
+    - { name: 'alias.last', value: 'log -1 HEAD' }
+    - { name: 'alias.lg', value: 'log --oneline --graph --decorate --all' }

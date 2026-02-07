@@ -1,0 +1,153 @@
+---
+- name: Create Clawdbot directories (structure only, no config files)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ clawdbot_config_dir }}", mode: '0755' }
+    - { path: "{{ clawdbot_config_dir }}/sessions", mode: '0755' }
+    - { path: "{{ clawdbot_config_dir }}/credentials", mode: '0700' }
+    - { path: "{{ clawdbot_config_dir }}/data", mode: '0755' }
+    - { path: "{{ clawdbot_config_dir }}/logs", mode: '0755' }
+
+- name: Create pnpm directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+    mode: '0755'
+  loop:
+    - "{{ clawdbot_home }}/.local/share/pnpm"
+    - "{{ clawdbot_home }}/.local/share/pnpm/store"
+    - "{{ clawdbot_home }}/.local/bin"
+
+- name: Ensure pnpm directories have correct ownership
+  ansible.builtin.file:
+    path: "{{ clawdbot_home }}/.local/share/pnpm"
+    state: directory
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+    recurse: true
+    mode: '0755'
+
+- name: Configure pnpm for clawdbot user
+  ansible.builtin.shell:
+    cmd: |
+      pnpm config set global-dir {{ clawdbot_home }}/.local/share/pnpm
+      pnpm config set global-bin-dir {{ clawdbot_home }}/.local/bin
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  changed_when: true
+
+- name: Display installation mode
+  ansible.builtin.debug:
+    msg: "Installation mode: {{ clawdbot_install_mode }}"
+
+- name: Include release installation (pnpm install -g)
+  ansible.builtin.include_tasks: clawdbot-release.yml
+  when: clawdbot_install_mode == "release"
+
+- name: Include development installation (git clone + build + link)
+  ansible.builtin.include_tasks: clawdbot-development.yml
+  when: clawdbot_install_mode == "development"
+
+- name: Configure .bashrc for clawdbot user (base config)
+  ansible.builtin.blockinfile:
+    path: "{{ clawdbot_home }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - Clawdbot pnpm"
+    block: |
+      # pnpm configuration
+      export PNPM_HOME="{{ clawdbot_home }}/.local/share/pnpm"
+      export PATH="{{ clawdbot_home }}/.local/bin:$PNPM_HOME:$PATH"
+    create: true
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+    mode: '0644'
+    insertafter: EOF
+
+- name: Install poetry via Homebrew
+  ansible.builtin.shell:
+    cmd: /home/linuxbrew/.linuxbrew/bin/brew install poetry
+    executable: /bin/bash
+  args:
+    creates: /home/linuxbrew/.linuxbrew/bin/poetry
+
+- name: Create skills directory
+  ansible.builtin.file:
+    path: "{{ clawdbot_config_dir }}/skills"
+    state: directory
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+    mode: '0755'
+
+- name: Copy wayfinder skill to server and unzip
+  ansible.builtin.unarchive:
+    src: wayfinder.skill
+    dest: "{{ clawdbot_config_dir }}/skills"
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+
+- name: Set Anthropic API key for clawdbot user
+  ansible.builtin.blockinfile:
+    path: "{{ clawdbot_home }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - Anthropic API key"
+    block: |
+      export ANTHROPIC_API_KEY="{{ anthropic_api_key }}"
+    create: true
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+    mode: '0644'
+  when: anthropic_api_key | length > 0
+
+- name: Write Anthropic API key to environment file
+  ansible.builtin.copy:
+    dest: "{{ clawdbot_config_dir }}/credentials/anthropic.env"
+    content: "ANTHROPIC_API_KEY={{ anthropic_api_key }}\n"
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+    mode: '0600'
+  when: anthropic_api_key | length > 0
+
+- name: Run clawdbot onboard non-interactively
+  ansible.builtin.expect:
+    command: "{{ clawdbot_home }}/.local/bin/clawdbot onboard --install-daemon"
+    responses:
+      "Continue\\?": "y"
+      "Onboarding mode": ""
+      "QuickStart": ""
+      "Model/auth provider": ""
+      "Anthropic auth method": ""
+      "Use existing ANTHROPIC_API_KEY": "y"
+      "Install daemon": "y"
+      "Start daemon": "y"
+    timeout: 120
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  environment:
+    ANTHROPIC_API_KEY: "{{ anthropic_api_key }}"
+    PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
+    PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+    HOME: "{{ clawdbot_home }}"
+    TERM: xterm-256color
+  when: anthropic_api_key | length > 0
+
+- name: Display configuration note
+  ansible.builtin.debug:
+    msg: |
+      Clawdbot onboarding complete. Daemon installed and started.
+  when: anthropic_api_key | length > 0
+
+- name: Display manual setup note
+  ansible.builtin.debug:
+    msg: |
+      Clawdbot is installed but NOT configured yet (no API key provided).
+
+      Next steps (run as clawdbot user):
+      1. Switch user: sudo su - clawdbot
+      2. Run onboarding: clawdbot onboard --install-daemon
+  when: anthropic_api_key | length == 0

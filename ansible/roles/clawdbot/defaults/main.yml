@@ -1,0 +1,44 @@
+---
+# Clawdbot default variables
+
+# Tailscale settings
+tailscale_authkey: ""  # Optional: set to auto-connect during installation
+
+# Node.js version
+nodejs_version: "22.x"
+
+# Clawdbot settings
+clawdbot_port: 3000
+
+# Clawdbot config directory
+clawdbot_config_dir: "{{ clawdbot_home }}/.clawdbot"
+
+# User settings (will be created as system user)
+clawdbot_user: clawdbot
+clawdbot_home: /home/clawdbot
+
+# OS-specific settings (set dynamically in tasks)
+homebrew_prefix: "{{ '/opt/homebrew' if ansible_os_family == 'Darwin' else '/home/linuxbrew/.linuxbrew' }}"
+package_manager: "{{ 'brew' if ansible_os_family == 'Darwin' else 'apt' }}"
+
+# Installation mode: 'release' or 'development'
+# release: Install via pnpm install -g clawdbot@latest
+# development: Clone repo, build from source, link globally
+clawdbot_install_mode: "release"
+
+# Development mode settings (only used when clawdbot_install_mode: development)
+clawdbot_repo_url: "https://github.com/clawdbot/clawdbot.git"
+clawdbot_repo_branch: "main"
+clawdbot_code_dir: "{{ clawdbot_home }}/code"
+clawdbot_repo_dir: "{{ clawdbot_code_dir }}/clawdbot"
+
+# SSH keys for clawdbot user
+# Add your public SSH keys here to allow SSH access as clawdbot user
+# Example:
+#   clawdbot_ssh_keys:
+#     - "ssh-ed25519 AAAAC3... user@host"
+clawdbot_ssh_keys: []
+
+# Anthropic API key for AI model access
+# Passed via --extra-vars from the creator API
+anthropic_api_key: ""
