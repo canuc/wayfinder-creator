@@ -1,0 +1,7 @@
+# flyctl launch added from .gitignore
+**/openclaw-creator
+**/*.exe
+**/.env
+**/test.sh
+**/ansible/roles
+fly.toml

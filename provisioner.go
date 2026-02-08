@@ -54,21 +54,25 @@ type ProvisionOpts struct {
 	Channels        []ChannelConfig
 }
 
-func (p *Provisioner) WaitForSSH(ip string) error {
+func (p *Provisioner) WaitForSSH(ip string, logFn func(string)) error {
 	addr := net.JoinHostPort(ip, "22")
 	slog.Info("waiting for server boot", "addr", addr)
+	logFn("Waiting 60s for server to boot...")
 	time.Sleep(60 * time.Second)
 
 	slog.Info("polling for SSH", "addr", addr)
+	logFn("Polling for SSH on " + addr + "...")
 	for attempt := range 60 {
 		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 		if err == nil {
 			conn.Close()
 			slog.Info("SSH is ready", "addr", addr, "attempts", attempt+1)
+			logFn(fmt.Sprintf("SSH is ready (after %d attempts)", attempt+1))
 			return nil
 		}
 		time.Sleep(5 * time.Second)
 	}
+	logFn("SSH not ready after 5 minutes — giving up")
 	return fmt.Errorf("SSH not ready after 5m at %s", addr)
 }
 
@@ -77,7 +81,7 @@ type ProvisionResult struct {
 	WalletAddress string
 }
 
-func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) {
+func (p *Provisioner) RunPlaybook(opts ProvisionOpts, logFn func(string)) (*ProvisionResult, error) {
 	slog.Info("starting provisioning",
 		"ip", opts.IP,
 		"ansible_dir", p.ansibleDir,
@@ -89,6 +93,7 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 		"has_wayfinder_key", opts.WayfinderAPIKey != "",
 		"channels", len(opts.Channels),
 	)
+	logFn("Starting Ansible provisioning...")
 
 	// Write a temporary inventory file
 	inventoryContent := fmt.Sprintf("[openclaw]\n%s ansible_user=root ansible_ssh_private_key_file=%s ansible_ssh_common_args='-o StrictHostKeyChecking=no'\n", opts.IP, p.sshPrivateKey)
@@ -117,6 +122,7 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 	}
 
 	slog.Info("launching ansible-playbook", "ip", opts.IP, "args", strings.Join(args, " "), "cwd", p.ansibleDir)
+	logFn("Running: ansible-playbook " + strings.Join(args, " "))
 
 	cmd := exec.Command("ansible-playbook", args...)
 	cmd.Dir = p.ansibleDir
@@ -146,6 +152,7 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 			for _, line := range strings.Split(strings.TrimRight(chunk, "\n"), "\n") {
 				if line != "" {
 					slog.Info("ansible", "ip", opts.IP, "out", line)
+					logFn(line)
 				}
 			}
 			lastLogTime = time.Now()
@@ -168,6 +175,7 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 	elapsed := time.Since(startTime).Round(time.Second)
 	if err := cmd.Wait(); err != nil {
 		slog.Error("provisioning failed", "ip", opts.IP, "error", err, "elapsed", elapsed.String(), "output_bytes", output.Len())
+		logFn(fmt.Sprintf("Provisioning FAILED after %s: %v", elapsed, err))
 		return nil, fmt.Errorf("ansible-playbook: %w\n%s", err, output.String())
 	}
 
@@ -175,6 +183,7 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 		WalletAddress: parseWalletAddress(output.String()),
 	}
 
+	logFn(fmt.Sprintf("Provisioning completed successfully in %s", elapsed))
 	slog.Info("provisioning completed", "ip", opts.IP, "wallet_address", result.WalletAddress, "elapsed", elapsed.String())
 	return result, nil
 }

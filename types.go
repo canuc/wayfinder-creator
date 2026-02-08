@@ -55,6 +55,14 @@ type ServerInfo struct {
 	Status        string // "provisioning", "ready", "failed"
 	Provisioned   bool
 	WalletAddress string
+	Logs          []string
+}
+
+type LogsResponse struct {
+	Lines  []string `json:"lines"`
+	Offset int      `json:"offset"`
+	Status string   `json:"status"`
+	Done   bool     `json:"done"`
 }
 
 type ServerTracker struct {
@@ -96,6 +104,28 @@ func (t *ServerTracker) SetWalletAddress(id int64, addr string) {
 	if info, ok := t.servers[id]; ok {
 		info.WalletAddress = addr
 	}
+}
+
+func (t *ServerTracker) AppendLog(id int64, line string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if info, ok := t.servers[id]; ok {
+		info.Logs = append(info.Logs, line)
+	}
+}
+
+func (t *ServerTracker) GetLogs(id int64, offset int) (lines []string, nextOffset int) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	info, ok := t.servers[id]
+	if !ok {
+		return nil, offset
+	}
+	if offset >= len(info.Logs) {
+		return nil, offset
+	}
+	lines = info.Logs[offset:]
+	return lines, len(info.Logs)
 }
 
 func (t *ServerTracker) Remove(id int64) {

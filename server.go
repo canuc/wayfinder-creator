@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -17,24 +18,43 @@ type Server struct {
 	hetzner     *HetznerClient
 	provisioner *Provisioner
 	tracker     *ServerTracker
+	username    string
+	password    string
 }
 
-func NewServer(hetzner *HetznerClient, provisioner *Provisioner, tracker *ServerTracker) *Server {
+func NewServer(hetzner *HetznerClient, provisioner *Provisioner, tracker *ServerTracker, username, password string) *Server {
 	return &Server{
 		hetzner:     hetzner,
 		provisioner: provisioner,
 		tracker:     tracker,
+		username:    username,
+		password:    password,
 	}
 }
 
-func (s *Server) Router() *http.ServeMux {
+func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /servers", s.handleCreateServer)
 	mux.HandleFunc("GET /servers", s.handleListServers)
+	mux.HandleFunc("GET /servers/{id}/logs", s.handleGetServerLogs)
 	mux.HandleFunc("GET /servers/{id}", s.handleGetServer)
 	mux.HandleFunc("DELETE /servers/{id}", s.handleDeleteServer)
 	mux.HandleFunc("GET /", s.handleIndex)
-	return mux
+	return s.basicAuth(mux)
+}
+
+func (s *Server) basicAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok ||
+			subtle.ConstantTimeCompare([]byte(user), []byte(s.username)) != 1 ||
+			subtle.ConstantTimeCompare([]byte(pass), []byte(s.password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="openclaw"`)
+			writeJSON(w, http.StatusUnauthorized, ErrorResponse{Error: "unauthorized"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
@@ -57,17 +77,24 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 
 	s.tracker.Add(info)
 
-	// Wait for SSH before returning
-	if err := s.provisioner.WaitForSSH(info.IPv4); err != nil {
-		slog.Error("SSH wait failed", "server_id", info.ID, "error", err)
-		s.tracker.UpdateStatus(info.ID, "failed", false)
-		writeJSON(w, http.StatusGatewayTimeout, ErrorResponse{Error: "server created but SSH not reachable: " + err.Error()})
-		return
+	logFn := func(line string) {
+		s.tracker.AppendLog(info.ID, line)
 	}
 
-	// Kick off Ansible provisioning in the background
+	logFn("Creating server...")
+	logFn(fmt.Sprintf("Server created: %s (%s)", info.Name, info.IPv4))
+	logFn("Waiting for SSH to become available...")
+
+	// Kick off SSH wait + Ansible provisioning in the background
 	go func(id int64, opts ProvisionOpts) {
-		result, err := s.provisioner.RunPlaybook(opts)
+		if err := s.provisioner.WaitForSSH(info.IPv4, logFn); err != nil {
+			slog.Error("SSH wait failed", "server_id", id, "error", err)
+			logFn("SSH wait failed: " + err.Error())
+			s.tracker.UpdateStatus(id, "failed", false)
+			return
+		}
+
+		result, err := s.provisioner.RunPlaybook(opts, logFn)
 		if err != nil {
 			slog.Error("provisioning failed", "server_id", id, "error", err)
 			s.tracker.UpdateStatus(id, "failed", false)
@@ -115,6 +142,37 @@ func (s *Server) handleGetServer(w http.ResponseWriter, r *http.Request) {
 		IPv4:          info.IPv4,
 		Provisioned:   info.Provisioned,
 		WalletAddress: info.WalletAddress,
+	})
+}
+
+func (s *Server) handleGetServerLogs(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid server id"})
+		return
+	}
+
+	info, ok := s.tracker.Get(id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "server not found"})
+		return
+	}
+
+	offset := 0
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	lines, nextOffset := s.tracker.GetLogs(id, offset)
+	done := info.Status == "ready" || info.Status == "failed"
+
+	writeJSON(w, http.StatusOK, LogsResponse{
+		Lines:  lines,
+		Offset: nextOffset,
+		Status: info.Status,
+		Done:   done,
 	})
 }
 

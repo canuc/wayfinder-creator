@@ -434,6 +434,102 @@
     border-color: var(--accent);
   }
 
+  /* Log viewer */
+  #log-view { display: none; }
+  #log-view.active { display: block; }
+  #main-view.hidden { display: none; }
+
+  .log-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .log-header .btn-back {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .log-header .btn-back:hover {
+    color: var(--text);
+    border-color: var(--border-hover);
+  }
+
+  .log-meta {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .log-meta .server-name {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .log-meta .server-ip {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+  }
+
+  .log-terminal {
+    background: #050507;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: #c8c8d0;
+    max-height: 70vh;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .log-terminal::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .log-terminal::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .log-terminal::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+
+  .log-done-msg {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+  }
+
+  /* Clickable server name in table */
+  .server-name-link {
+    color: var(--text);
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .server-name-link:hover {
+    color: var(--accent-text);
+    text-decoration: underline;
+  }
+
   /* Footer */
   footer {
     margin-top: 3rem;
@@ -462,60 +558,82 @@
     <div class="subtitle">Cloud server provisioning</div>
   </header>
 
-  <section>
-    <div class="section-label">Deploy</div>
-    <div class="card">
-      <form id="create-form">
-        <div class="form-grid">
-          <div>
-            <label>Server name <span class="hint">(auto-generated if blank)</span></label>
-            <input type="text" id="f-name" placeholder="claw-myserver" autocomplete="off" spellcheck="false">
-          </div>
-          <div>
-            <label>SSH public key</label>
-            <textarea id="f-ssh" placeholder="ssh-ed25519 AAAA..." spellcheck="false"></textarea>
-          </div>
-          <div class="form-row">
+  <div id="main-view">
+    <section>
+      <div class="section-label">Deploy</div>
+      <div class="card">
+        <form id="create-form">
+          <div class="form-grid">
             <div>
-              <label>AI provider</label>
-              <select id="f-provider">
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openai">OpenAI (ChatGPT)</option>
-                <option value="gemini">Google Gemini</option>
-              </select>
+              <label>Server name <span class="hint">(auto-generated if blank)</span></label>
+              <input type="text" id="f-name" placeholder="claw-myserver" autocomplete="off" spellcheck="false">
             </div>
             <div>
-              <label id="provider-key-label">Anthropic API key</label>
-              <div class="input-wrap">
-                <input type="password" id="f-provider-key" placeholder="sk-ant-api03-..." autocomplete="off" spellcheck="false">
-                <button type="button" class="toggle-vis" data-target="f-provider-key">show</button>
+              <label>SSH public key</label>
+              <textarea id="f-ssh" placeholder="ssh-ed25519 AAAA..." spellcheck="false"></textarea>
+            </div>
+            <div class="form-row">
+              <div>
+                <label>AI provider</label>
+                <select id="f-provider">
+                  <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="openai">OpenAI (ChatGPT)</option>
+                  <option value="gemini">Google Gemini</option>
+                </select>
+              </div>
+              <div>
+                <label id="provider-key-label">Anthropic API key</label>
+                <div class="input-wrap">
+                  <input type="password" id="f-provider-key" placeholder="sk-ant-api03-..." autocomplete="off" spellcheck="false">
+                  <button type="button" class="toggle-vis" data-target="f-provider-key">show</button>
+                </div>
               </div>
             </div>
+            <div>
+              <label>Wayfinder API key <span class="hint">(required)</span></label>
+              <div class="input-wrap">
+                <input type="password" id="f-wayfinder-key" placeholder="wf-..." autocomplete="off" spellcheck="false" required>
+                <button type="button" class="toggle-vis" data-target="f-wayfinder-key">show</button>
+              </div>
+            </div>
+            <div id="channels-section">
+              <label>Channels <span class="hint">(optional)</span></label>
+              <div id="channels-list"></div>
+              <button type="button" class="btn-add-channel" id="add-channel-btn">+ Add channel</button>
+            </div>
           </div>
-          <div id="channels-section">
-            <label>Channels <span class="hint">(optional)</span></label>
-            <div id="channels-list"></div>
-            <button type="button" class="btn-add-channel" id="add-channel-btn">+ Add channel</button>
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" id="submit-btn">Deploy server</button>
           </div>
-        </div>
-        <div class="actions">
-          <button type="submit" class="btn btn-primary" id="submit-btn">Deploy server</button>
-        </div>
-        <div class="status-msg" id="form-status"></div>
-      </form>
-    </div>
-  </section>
+          <div class="status-msg" id="form-status"></div>
+        </form>
+      </div>
+    </section>
 
-  <section>
-    <div class="section-label">Servers</div>
-    <div class="card">
-      <div class="table-wrap">
-        <div id="server-list">
-          <div class="empty-state">No servers running. Deploy one to get started.</div>
+    <section>
+      <div class="section-label">Servers</div>
+      <div class="card">
+        <div class="table-wrap">
+          <div id="server-list">
+            <div class="empty-state">No servers running. Deploy one to get started.</div>
+          </div>
         </div>
       </div>
+    </section>
+  </div>
+
+  <div id="log-view">
+    <div class="log-header">
+      <button class="btn-back" id="log-back-btn">&larr; Back</button>
+      <span id="log-status-pill"></span>
     </div>
-  </section>
+    <div class="log-meta">
+      <span class="server-name" id="log-server-name"></span>
+      <span class="server-ip" id="log-server-ip"></span>
+    </div>
+    <pre class="log-terminal" id="log-terminal"></pre>
+    <div class="log-done-msg" id="log-done-msg"></div>
+  </div>
 
   <footer>
     openclaw creator
@@ -528,6 +646,9 @@
 
   const API = '';
   let polling = null;
+  let logPolling = null;
+  let logOffset = 0;
+  let currentLogServerId = null;
 
   // Toggle password visibility
   document.querySelectorAll('.toggle-vis').forEach(btn => {
@@ -616,10 +737,19 @@
     const ssh = document.getElementById('f-ssh').value.trim();
     const provider = document.getElementById('f-provider').value;
     const providerKey = document.getElementById('f-provider-key').value.trim();
+    const wayfinderKey = document.getElementById('f-wayfinder-key').value.trim();
     const channels = getChannels();
+
+    if (!wayfinderKey) {
+      showStatus('Wayfinder API key is required', false);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Deploy server';
+      return;
+    }
 
     if (name) body.name = name;
     if (ssh) body.ssh_public_key = ssh;
+    body.wayfinder_api_key = wayfinderKey;
     if (providerKey) {
       if (provider === 'anthropic') body.anthropic_api_key = providerKey;
       else if (provider === 'openai') body.openai_api_key = providerKey;
@@ -638,10 +768,10 @@
         showStatus('Error: ' + (data.error || res.statusText), false);
         return;
       }
-      showStatus('Server ' + data.name + ' created (id: ' + data.id + ') \u2014 provisioning started', true);
       form.reset();
       refreshServers();
       startPolling();
+      showLogView(data.id, data.name, data.ipv4 || '');
     } catch (err) {
       showStatus('Network error: ' + err.message, false);
     } finally {
@@ -683,7 +813,7 @@
         : '<span style="color:var(--text-tertiary)">\u2014</span>';
 
       html += '<tr>';
-      html += '<td class="name-col">' + s.name + '</td>';
+      html += '<td class="name-col"><a class="server-name-link" href="#" onclick="viewLogs(' + s.id + ',\'' + escHtml(s.name) + '\',\'' + escHtml(s.ipv4 || '') + '\');return false">' + escHtml(s.name) + '</a></td>';
       html += '<td>' + badge + '</td>';
       html += '<td>' + (s.ipv4 || '\u2014') + '</td>';
       html += '<td>' + wallet + '</td>';
@@ -718,6 +848,81 @@
     } catch (err) {
       alert('Network error: ' + err.message);
     }
+  };
+
+  // HTML escaping helper
+  function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // Log viewer
+  function showLogView(serverId, name, ip) {
+    currentLogServerId = serverId;
+    logOffset = 0;
+    document.getElementById('main-view').classList.add('hidden');
+    document.getElementById('log-view').classList.add('active');
+    document.getElementById('log-server-name').textContent = name;
+    document.getElementById('log-server-ip').textContent = ip;
+    document.getElementById('log-terminal').textContent = '';
+    document.getElementById('log-done-msg').textContent = '';
+    document.getElementById('log-status-pill').innerHTML = '';
+    startLogPolling(serverId);
+  }
+
+  function hideLogView() {
+    stopLogPolling();
+    currentLogServerId = null;
+    document.getElementById('log-view').classList.remove('active');
+    document.getElementById('main-view').classList.remove('hidden');
+    refreshServers();
+  }
+
+  document.getElementById('log-back-btn').addEventListener('click', hideLogView);
+
+  function startLogPolling(serverId) {
+    stopLogPolling();
+    pollLogs(serverId);
+    logPolling = setInterval(() => pollLogs(serverId), 1000);
+  }
+
+  function stopLogPolling() {
+    if (logPolling) { clearInterval(logPolling); logPolling = null; }
+  }
+
+  async function pollLogs(serverId) {
+    try {
+      const res = await fetch(API + '/servers/' + serverId + '/logs?offset=' + logOffset);
+      if (!res.ok) return;
+      const data = await res.json();
+      const terminal = document.getElementById('log-terminal');
+      if (data.lines && data.lines.length > 0) {
+        for (const line of data.lines) {
+          terminal.textContent += line + '\n';
+        }
+        terminal.scrollTop = terminal.scrollHeight;
+        logOffset = data.offset;
+      }
+      // Update status pill
+      updateLogStatusPill(data.status);
+      if (data.done) {
+        stopLogPolling();
+        const msg = data.status === 'ready' ? 'Provisioning complete.' : 'Provisioning failed.';
+        document.getElementById('log-done-msg').textContent = msg;
+      }
+    } catch (_) {}
+  }
+
+  function updateLogStatusPill(status) {
+    const sc = status === 'ready' ? 'ready' : status === 'failed' ? 'failed' : 'provisioning';
+    document.getElementById('log-status-pill').innerHTML =
+      '<span class="status-pill status-' + sc + '"><span class="dot"></span>' + status + '</span>';
+  }
+
+  // Global function for clickable server names
+  window.viewLogs = function (id, name, ip) {
+    showLogView(id, name, ip);
   };
 
   // Initial load

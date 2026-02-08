@@ -19,7 +19,7 @@ func main() {
 	provisioner := NewProvisioner(cfg)
 	tracker := NewServerTracker()
 
-	srv := NewServer(hetzner, provisioner, tracker)
+	srv := NewServer(hetzner, provisioner, tracker, cfg.APIUsername, cfg.APIPassword)
 
 	slog.Info("starting server", "addr", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, srv.Router()); err != nil {

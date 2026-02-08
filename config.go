@@ -18,6 +18,8 @@ type Config struct {
 	AnsibleDir        string
 	SSHPrivateKey     string
 	SSHPrivateKeyData string
+	APIUsername       string
+	APIPassword       string
 }
 
 func LoadConfig() (*Config, error) {
@@ -38,6 +40,15 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("SSH_KEY_ID must be an integer: %w", err)
 	}
 
+	apiUser := os.Getenv("API_USERNAME")
+	if apiUser == "" {
+		return nil, fmt.Errorf("API_USERNAME is required")
+	}
+	apiPass := os.Getenv("API_PASSWORD")
+	if apiPass == "" {
+		return nil, fmt.Errorf("API_PASSWORD is required")
+	}
+
 	return &Config{
 		HCloudToken:       token,
 		SSHKeyID:          sshKeyID,
@@ -48,6 +59,8 @@ func LoadConfig() (*Config, error) {
 		AnsibleDir:        envOrDefault("ANSIBLE_DIR", "./ansible"),
 		SSHPrivateKey:     envOrDefault("SSH_PRIVATE_KEY", "~/.ssh/id_ed25519"),
 		SSHPrivateKeyData: os.Getenv("SSH_PRIVATE_KEY_DATA"),
+		APIUsername:       apiUser,
+		APIPassword:       apiPass,
 	}, nil
 }
 
