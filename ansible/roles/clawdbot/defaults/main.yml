@@ -49,6 +49,9 @@ gemini_api_key: ""
 # Wayfinder API key for Wayfinder Paths SDK
 wayfinder_api_key: ""
 
+# Creator public key for node API authentication (ECDSA P-256 PEM)
+creator_public_key: ""
+
 # Channel configuration (passed via --extra-vars from the creator API)
 # List of channel objects: [{type: telegram, token: "...", name: "...", account: "..."}]
 # Supported types: telegram, discord, whatsapp, signal, slack, googlechat, mattermost

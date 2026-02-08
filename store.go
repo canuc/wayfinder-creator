@@ -51,6 +51,7 @@ func (s *Store) Migrate() error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
 		CREATE INDEX IF NOT EXISTS idx_server_logs_server_id ON server_logs(server_id);
+		ALTER TABLE servers ADD COLUMN IF NOT EXISTS public_key TEXT NOT NULL DEFAULT '';
 	`)
 	return err
 }
@@ -81,10 +82,10 @@ func (s *Store) CreateServer(info *ServerInfo, opts ProvisionOpts) error {
 		channelsJSON = []byte("[]")
 	}
 	_, err = s.db.Exec(`
-		INSERT INTO servers (id, name, ipv4, status, provisioned, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO servers (id, name, ipv4, status, provisioned, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels, public_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`, info.ID, info.Name, info.IPv4, info.Status, info.Provisioned,
-		opts.SSHPublicKey, opts.AnthropicAPIKey, opts.OpenAIAPIKey, opts.GeminiAPIKey, opts.WayfinderAPIKey, channelsJSON)
+		opts.SSHPublicKey, opts.AnthropicAPIKey, opts.OpenAIAPIKey, opts.GeminiAPIKey, opts.WayfinderAPIKey, channelsJSON, opts.CreatorPublicKey)
 	return err
 }
 
@@ -142,6 +143,20 @@ func (s *Store) SetDefaultKeyRemoved(id int64, removed bool) {
 	}
 }
 
+func (s *Store) SetPublicKey(id int64, pem string) error {
+	_, err := s.db.Exec(`UPDATE servers SET public_key=$1 WHERE id=$2`, pem, id)
+	if err != nil {
+		slog.Error("failed to set public_key", "server_id", id, "error", err)
+	}
+	return err
+}
+
+func (s *Store) GetPublicKey(id int64) (string, error) {
+	var key string
+	err := s.db.QueryRow(`SELECT public_key FROM servers WHERE id=$1`, id).Scan(&key)
+	return key, err
+}
+
 func (s *Store) AppendLog(id int64, line string) error {
 	_, err := s.db.Exec(`INSERT INTO server_logs (server_id, line) VALUES ($1, $2)`, id, line)
 	if err != nil {
@@ -189,9 +204,9 @@ func (s *Store) GetProvisionOpts(id int64) (*ProvisionOpts, error) {
 	var channelsJSON []byte
 	var ip string
 	err := s.db.QueryRow(`
-		SELECT ipv4, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels
+		SELECT ipv4, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels, public_key
 		FROM servers WHERE id=$1
-	`, id).Scan(&ip, &opts.SSHPublicKey, &opts.AnthropicAPIKey, &opts.OpenAIAPIKey, &opts.GeminiAPIKey, &opts.WayfinderAPIKey, &channelsJSON)
+	`, id).Scan(&ip, &opts.SSHPublicKey, &opts.AnthropicAPIKey, &opts.OpenAIAPIKey, &opts.GeminiAPIKey, &opts.WayfinderAPIKey, &channelsJSON, &opts.CreatorPublicKey)
 	if err != nil {
 		return nil, err
 	}

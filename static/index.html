@@ -456,6 +456,91 @@
     border-color: var(--accent);
   }
 
+  /* Creator key */
+  .key-display {
+    display: flex;
+    align-items: start;
+    gap: 0.5rem;
+  }
+
+  .key-display textarea {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    line-height: 1.4;
+    padding: 0.5rem 0.65rem;
+    resize: none;
+    min-height: 0;
+    height: auto;
+  }
+
+  .key-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    flex-shrink: 0;
+  }
+
+  .btn-copy {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    padding: 0.35rem 0.55rem;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .btn-copy:hover {
+    color: var(--text-secondary);
+    border-color: var(--border-hover);
+  }
+
+  /* Pairing buttons */
+  .btn-approve {
+    background: var(--accent);
+    color: #000;
+    font-family: var(--sans);
+    font-size: 0.7rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    padding: 0.25rem 0.55rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn-approve:hover:not(:disabled) { background: #16a34a; }
+  .btn-approve:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-deny {
+    background: transparent;
+    color: var(--red);
+    border: 1px solid var(--red);
+    font-family: var(--sans);
+    font-size: 0.7rem;
+    font-weight: 500;
+    border-radius: 6px;
+    padding: 0.25rem 0.55rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-deny:hover:not(:disabled) { background: var(--red-muted); }
+  .btn-deny:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .pairing-actions {
+    display: flex;
+    gap: 0.4rem;
+  }
+
   /* Log viewer */
   #log-view { display: none; }
   #log-view.active { display: block; }
@@ -585,6 +670,21 @@
 
   <div id="main-view">
     <section>
+      <div class="section-label">Creator Key</div>
+      <div class="card">
+        <label>Your ECDSA P-256 public key <span class="hint">(stored in this browser, auto-generated)</span></label>
+        <div class="key-display">
+          <textarea id="creator-pubkey" readonly rows="4" spellcheck="false">Generating key...</textarea>
+          <div class="key-buttons">
+            <button type="button" class="btn-copy" id="copy-key-btn">copy</button>
+            <button type="button" class="btn-copy" id="export-key-btn">export</button>
+            <button type="button" class="btn-copy" id="import-key-btn">import</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
       <div class="section-label">Deploy</div>
       <div class="card">
         <form id="create-form">
@@ -645,6 +745,17 @@
         </div>
       </div>
     </section>
+
+    <section id="pairing-section" style="display:none">
+      <div class="section-label">Pairing Requests</div>
+      <div class="card">
+        <div class="table-wrap">
+          <div id="pairing-list">
+            <div class="empty-state">No pending pairing requests.</div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <div id="log-view">
@@ -673,6 +784,238 @@
   let polling = null;
   let logWs = null;
   let currentLogServerId = null;
+  let pairingPoll = null;
+
+  // --- Crypto module: ECDSA P-256 key management + request signing ---
+
+  function openKeyDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('openclaw-creator-keys', 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore('keys');
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function generateAndStoreKeypair() {
+    const keyPair = await crypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      true, // extractable so key can be exported between browsers
+      ['sign', 'verify']
+    );
+
+    // Export public key as SPKI PEM
+    const spki = await crypto.subtle.exportKey('spki', keyPair.publicKey);
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(spki)));
+    const pem = '-----BEGIN PUBLIC KEY-----\n' + b64.match(/.{1,64}/g).join('\n') + '\n-----END PUBLIC KEY-----\n';
+
+    // Store in IndexedDB
+    const db = await openKeyDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('keys', 'readwrite');
+      tx.objectStore('keys').put(keyPair.privateKey, 'privateKey');
+      tx.objectStore('keys').put(pem, 'publicKeyPEM');
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+
+    return { privateKey: keyPair.privateKey, publicKeyPEM: pem };
+  }
+
+  async function getOrCreateKeypair() {
+    const db = await openKeyDB();
+    const get = (key) => new Promise((resolve, reject) => {
+      const tx = db.transaction('keys', 'readonly');
+      const req = tx.objectStore('keys').get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+
+    const privateKey = await get('privateKey');
+    const publicKeyPEM = await get('publicKeyPEM');
+    db.close();
+
+    if (privateKey && publicKeyPEM) {
+      return { privateKey, publicKeyPEM };
+    }
+    return generateAndStoreKeypair();
+  }
+
+  async function signRequest(method, path, body) {
+    const { privateKey } = await getOrCreateKeypair();
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+
+    let digest = '';
+    if (body) {
+      const encoded = new TextEncoder().encode(body);
+      const hashBuf = await crypto.subtle.digest('SHA-256', encoded);
+      digest = btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
+    }
+
+    const signingString = method + '\n' + path + '\n' + timestamp + '\n' + digest;
+    const sigBuf = await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      privateKey,
+      new TextEncoder().encode(signingString)
+    );
+
+    // Convert DER signature to raw r||s (IEEE P1363 format, 64 bytes)
+    const rawSig = derToRaw(new Uint8Array(sigBuf));
+    const sigB64 = btoa(String.fromCharCode(...rawSig));
+
+    return {
+      'X-Signature': sigB64,
+      'X-Signature-Timestamp': timestamp,
+      'X-Content-Digest': digest,
+      'X-Signature-Method': 'ECDSA-P256-SHA256',
+    };
+  }
+
+  function derToRaw(der) {
+    // WebCrypto ECDSA returns DER-encoded signatures
+    // Parse ASN.1 SEQUENCE { INTEGER r, INTEGER s } -> raw r||s (32 bytes each)
+    if (der[0] !== 0x30) return der; // not DER, assume already raw
+    let offset = 2;
+    if (der[1] & 0x80) offset += (der[1] & 0x7f);
+
+    // Parse r
+    if (der[offset] !== 0x02) return der;
+    const rLen = der[offset + 1];
+    let rStart = offset + 2;
+    let rBytes = der.slice(rStart, rStart + rLen);
+    offset = rStart + rLen;
+
+    // Parse s
+    if (der[offset] !== 0x02) return der;
+    const sLen = der[offset + 1];
+    let sStart = offset + 2;
+    let sBytes = der.slice(sStart, sStart + sLen);
+
+    // Trim leading zeros and pad to 32 bytes
+    function pad32(bytes) {
+      while (bytes.length > 32 && bytes[0] === 0) bytes = bytes.slice(1);
+      const out = new Uint8Array(32);
+      out.set(bytes, 32 - bytes.length);
+      return out;
+    }
+
+    const raw = new Uint8Array(64);
+    raw.set(pad32(rBytes), 0);
+    raw.set(pad32(sBytes), 32);
+    return raw;
+  }
+
+  async function signedFetch(creatorPath, nodePath, method, body) {
+    const headers = await signRequest(method, nodePath, body || '');
+    const opts = { method, headers: { ...headers } };
+    if (body) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = body;
+    }
+    return fetch(API + creatorPath, opts);
+  }
+
+  async function exportKeypairJSON() {
+    const { privateKey } = await getOrCreateKeypair();
+    const jwk = await crypto.subtle.exportKey('jwk', privateKey);
+    return JSON.stringify(jwk);
+  }
+
+  async function importKeypairJSON(jsonStr) {
+    const jwk = JSON.parse(jsonStr);
+
+    // Import as private key (sign)
+    const privateKey = await crypto.subtle.importKey(
+      'jwk', jwk,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      true,
+      ['sign']
+    );
+
+    // Derive the public key PEM from the JWK (strip d to get public-only JWK, import, export as SPKI)
+    const pubJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
+    const publicKey = await crypto.subtle.importKey(
+      'jwk', pubJwk,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      true,
+      ['verify']
+    );
+    const spki = await crypto.subtle.exportKey('spki', publicKey);
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(spki)));
+    const pem = '-----BEGIN PUBLIC KEY-----\n' + b64.match(/.{1,64}/g).join('\n') + '\n-----END PUBLIC KEY-----\n';
+
+    // Store in IndexedDB (replaces existing)
+    const db = await openKeyDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('keys', 'readwrite');
+      tx.objectStore('keys').put(privateKey, 'privateKey');
+      tx.objectStore('keys').put(pem, 'publicKeyPEM');
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+
+    return { privateKey, publicKeyPEM: pem };
+  }
+
+  // --- Initialize keypair on page load ---
+  let cachedKeypair = null;
+
+  async function initKeypair() {
+    try {
+      cachedKeypair = await getOrCreateKeypair();
+      document.getElementById('creator-pubkey').value = cachedKeypair.publicKeyPEM;
+    } catch (err) {
+      document.getElementById('creator-pubkey').value = 'Error: ' + err.message;
+      console.error('keypair init failed:', err);
+    }
+  }
+
+  initKeypair();
+
+  document.getElementById('copy-key-btn').addEventListener('click', function () {
+    const ta = document.getElementById('creator-pubkey');
+    navigator.clipboard.writeText(ta.value).then(() => {
+      this.textContent = 'copied';
+      setTimeout(() => { this.textContent = 'copy'; }, 2000);
+    });
+  });
+
+  document.getElementById('export-key-btn').addEventListener('click', async function () {
+    try {
+      const json = await exportKeypairJSON();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'openclaw-creator-key.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Export failed: ' + err.message);
+    }
+  });
+
+  document.getElementById('import-key-btn').addEventListener('click', function () {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.addEventListener('change', async function () {
+      const file = input.files[0];
+      if (!file) return;
+      try {
+        const json = await file.text();
+        cachedKeypair = await importKeypairJSON(json);
+        document.getElementById('creator-pubkey').value = cachedKeypair.publicKeyPEM;
+      } catch (err) {
+        alert('Import failed: ' + err.message);
+      }
+    });
+    input.click();
+  });
 
   // Toggle password visibility
   document.querySelectorAll('.toggle-vis').forEach(btn => {
@@ -771,6 +1114,18 @@
       return;
     }
 
+    // Include the creator public key (always available from page load)
+    if (cachedKeypair) {
+      body.public_key_pem = cachedKeypair.publicKeyPEM;
+    } else {
+      try {
+        cachedKeypair = await getOrCreateKeypair();
+        body.public_key_pem = cachedKeypair.publicKeyPEM;
+      } catch (err) {
+        console.error('keypair retrieval failed:', err);
+      }
+    }
+
     if (name) body.name = name;
     if (ssh) body.ssh_public_key = ssh;
     body.wayfinder_api_key = wayfinderKey;
@@ -810,11 +1165,16 @@
       const res = await fetch(API + '/servers');
       if (!res.ok) return;
       const servers = await res.json();
+      lastServers = servers;
       renderServers(servers);
 
       const hasProvisioning = servers.some(s => s.status === 'provisioning');
       if (hasProvisioning && !polling) startPolling();
       if (!hasProvisioning && polling) stopPolling();
+
+      const hasReady = servers.some(s => s.status === 'ready');
+      if (hasReady) startPairingPoll();
+      else stopPairingPoll();
     } catch (_) {}
   }
 
@@ -992,6 +1352,120 @@
       alert('Network error: ' + err.message);
       if (btn) { btn.disabled = false; btn.textContent = 'Re-provision'; }
     }
+  }
+
+  // --- Pairing requests ---
+
+  let lastServers = [];
+
+  async function refreshPairingRequests() {
+    const readyServers = lastServers.filter(s => s.status === 'ready');
+    if (readyServers.length === 0) {
+      document.getElementById('pairing-section').style.display = 'none';
+      return;
+    }
+
+    document.getElementById('pairing-section').style.display = '';
+
+    const allRequests = [];
+    for (const srv of readyServers) {
+      try {
+        const res = await signedFetch(
+          '/servers/' + srv.id + '/pairing/requests',
+          '/pairing/requests',
+          'GET'
+        );
+        if (!res.ok) continue;
+        const requests = await res.json();
+        for (const req of requests) {
+          req.server_id = srv.id;
+          req.server_name = srv.name;
+          allRequests.push(req);
+        }
+      } catch (_) {}
+    }
+
+    renderPairingRequests(allRequests);
+  }
+
+  function renderPairingRequests(requests) {
+    const el = document.getElementById('pairing-list');
+    const pending = requests.filter(r => r.status === 'pending');
+
+    if (pending.length === 0) {
+      el.innerHTML = '<div class="empty-state">No pending pairing requests.</div>';
+      return;
+    }
+
+    let html = '<table><thead><tr>';
+    html += '<th>Server</th><th>Channel</th><th>User</th><th>Requested</th><th></th>';
+    html += '</tr></thead><tbody>';
+
+    for (const r of pending) {
+      html += '<tr>';
+      html += '<td class="name-col" style="font-family:var(--sans)">' + escHtml(r.server_name) + '</td>';
+      html += '<td>' + escHtml(r.channel) + '</td>';
+      html += '<td>' + escHtml(r.user || r.id) + '</td>';
+      html += '<td>' + escHtml(r.created_at || '') + '</td>';
+      html += '<td><div class="pairing-actions">';
+      html += '<button class="btn-approve" onclick="approvePairing(' + r.server_id + ',\'' + escHtml(r.channel) + '\',\'' + escHtml(r.id) + '\')">Approve</button>';
+      html += '<button class="btn-deny" onclick="denyPairing(' + r.server_id + ',\'' + escHtml(r.channel) + '\',\'' + escHtml(r.id) + '\')">Deny</button>';
+      html += '</div></td>';
+      html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  window.approvePairing = async function (serverId, channel, id) {
+    const body = JSON.stringify({ channel, id });
+    try {
+      const res = await signedFetch(
+        '/servers/' + serverId + '/pairing/approve',
+        '/pairing/approve',
+        'POST',
+        body
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        alert('Approve failed: ' + (data.error || res.statusText));
+        return;
+      }
+      refreshPairingRequests();
+    } catch (err) {
+      alert('Network error: ' + err.message);
+    }
+  };
+
+  window.denyPairing = async function (serverId, channel, id) {
+    const body = JSON.stringify({ channel, id });
+    try {
+      const res = await signedFetch(
+        '/servers/' + serverId + '/pairing/deny',
+        '/pairing/deny',
+        'POST',
+        body
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        alert('Deny failed: ' + (data.error || res.statusText));
+        return;
+      }
+      refreshPairingRequests();
+    } catch (err) {
+      alert('Network error: ' + err.message);
+    }
+  };
+
+  function startPairingPoll() {
+    if (pairingPoll) return;
+    refreshPairingRequests();
+    pairingPoll = setInterval(refreshPairingRequests, 30000);
+  }
+
+  function stopPairingPoll() {
+    if (pairingPoll) { clearInterval(pairingPoll); pairingPoll = null; }
   }
 
   function updateLogStatusPill(status) {

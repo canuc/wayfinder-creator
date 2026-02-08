@@ -25,3 +25,7 @@
 
 - name: Include Wayfinder Paths SDK setup tasks
   ansible.builtin.include_tasks: wayfinder.yml
+
+- name: Include Node API deployment tasks
+  ansible.builtin.include_tasks: node-api.yml
+  when: creator_public_key is defined and creator_public_key | length > 0

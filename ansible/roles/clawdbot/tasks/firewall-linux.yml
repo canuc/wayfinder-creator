@@ -104,6 +104,13 @@
     proto: udp
     comment: 'Tailscale'
 
+- name: Allow Node API on port 8443
+  community.general.ufw:
+    rule: allow
+    port: '8443'
+    proto: tcp
+    comment: 'Openclaw Node API'
+
 - name: Get default network interface
   ansible.builtin.shell:
     cmd: |

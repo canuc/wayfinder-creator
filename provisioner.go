@@ -45,13 +45,14 @@ func NewProvisioner(cfg *Config) *Provisioner {
 }
 
 type ProvisionOpts struct {
-	IP              string
-	SSHPublicKey    string
-	AnthropicAPIKey string
-	OpenAIAPIKey    string
-	GeminiAPIKey    string
-	WayfinderAPIKey string
-	Channels        []ChannelConfig
+	IP               string
+	SSHPublicKey     string
+	AnthropicAPIKey  string
+	OpenAIAPIKey     string
+	GeminiAPIKey     string
+	WayfinderAPIKey  string
+	Channels         []ChannelConfig
+	CreatorPublicKey string
 }
 
 func (p *Provisioner) WaitForSSH(ip string, logFn func(string)) error {
@@ -209,6 +210,9 @@ func (p *Provisioner) buildExtraVars(opts ProvisionOpts) string {
 	}
 	if opts.WayfinderAPIKey != "" {
 		vars["wayfinder_api_key"] = opts.WayfinderAPIKey
+	}
+	if opts.CreatorPublicKey != "" {
+		vars["creator_public_key"] = opts.CreatorPublicKey
 	}
 	if len(opts.Channels) > 0 {
 		// Pass channels as a JSON-serializable list for Ansible

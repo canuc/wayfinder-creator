@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -48,6 +49,11 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /servers", s.handleListServers)
 	mux.HandleFunc("GET /servers/{id}/ws", s.handleWebSocket)
 	mux.HandleFunc("POST /servers/{id}/reprovision", s.handleReprovision)
+	mux.HandleFunc("POST /servers/{id}/public-key", s.handleSetPublicKey)
+	mux.HandleFunc("GET /servers/{id}/pairing/requests", s.handlePairingRequests)
+	mux.HandleFunc("POST /servers/{id}/pairing/approve", s.handlePairingApprove)
+	mux.HandleFunc("POST /servers/{id}/pairing/deny", s.handlePairingDeny)
+	mux.HandleFunc("GET /servers/{id}/channels/status", s.handleChannelsStatus)
 	mux.HandleFunc("GET /servers/{id}", s.handleGetServer)
 	mux.HandleFunc("DELETE /servers/{id}", s.handleDeleteServer)
 	mux.HandleFunc("GET /", s.handleIndex)
@@ -87,13 +93,14 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := ProvisionOpts{
-		IP:              info.IPv4,
-		SSHPublicKey:    req.SSHPublicKey,
-		AnthropicAPIKey: req.AnthropicAPIKey,
-		OpenAIAPIKey:    req.OpenAIAPIKey,
-		GeminiAPIKey:    req.GeminiAPIKey,
-		WayfinderAPIKey: req.WayfinderAPIKey,
-		Channels:        req.Channels,
+		IP:               info.IPv4,
+		SSHPublicKey:     req.SSHPublicKey,
+		AnthropicAPIKey:  req.AnthropicAPIKey,
+		OpenAIAPIKey:     req.OpenAIAPIKey,
+		GeminiAPIKey:     req.GeminiAPIKey,
+		WayfinderAPIKey:  req.WayfinderAPIKey,
+		Channels:         req.Channels,
+		CreatorPublicKey: req.PublicKeyPEM,
 	}
 
 	if err := s.store.CreateServer(info, opts); err != nil {
@@ -400,6 +407,97 @@ func (s *Server) handleReprovision(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reprovisioning"})
+}
+
+func (s *Server) handleSetPublicKey(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid server id"})
+		return
+	}
+
+	var req struct {
+		PublicKeyPEM string `json:"public_key_pem"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.PublicKeyPEM == "" {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "public_key_pem is required"})
+		return
+	}
+
+	if err := s.store.SetPublicKey(id, req.PublicKeyPEM); err != nil {
+		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "failed to set public key"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handlePairingRequests(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	s.proxyToNode(w, r, id, "GET", "/pairing/requests", nil)
+}
+
+func (s *Server) handlePairingApprove(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	body, _ := io.ReadAll(r.Body)
+	s.proxyToNode(w, r, id, "POST", "/pairing/approve", body)
+}
+
+func (s *Server) handlePairingDeny(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	body, _ := io.ReadAll(r.Body)
+	s.proxyToNode(w, r, id, "POST", "/pairing/deny", body)
+}
+
+func (s *Server) handleChannelsStatus(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	s.proxyToNode(w, r, id, "GET", "/channels/status", nil)
+}
+
+func (s *Server) proxyToNode(w http.ResponseWriter, r *http.Request, serverID int64, method, path string, body []byte) {
+	info, err := s.store.GetServer(serverID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "server not found"})
+		return
+	}
+	if info.Status != "ready" {
+		writeJSON(w, http.StatusConflict, ErrorResponse{Error: "server is not ready"})
+		return
+	}
+
+	url := fmt.Sprintf("http://%s:8443%s", info.IPv4, path)
+
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = strings.NewReader(string(body))
+	}
+
+	proxyReq, err := http.NewRequest(method, url, bodyReader)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "failed to create proxy request"})
+		return
+	}
+
+	// Forward signature headers unchanged
+	for _, h := range []string{"X-Signature", "X-Signature-Timestamp", "X-Content-Digest", "X-Signature-Method", "Content-Type"} {
+		if v := r.Header.Get(h); v != "" {
+			proxyReq.Header.Set(h, v)
+		}
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		slog.Error("proxy to node failed", "server_id", serverID, "url", url, "error", err)
+		writeJSON(w, http.StatusBadGateway, ErrorResponse{Error: "node unreachable"})
+		return
+	}
+	defer resp.Body.Close()
+
+	// Forward response
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
