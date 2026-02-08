@@ -8,7 +8,7 @@ import pexpect
 import sys
 import os
 
-cmd = os.path.expanduser("~/.local/bin/clawdbot onboard --install-daemon")
+cmd = os.path.expanduser("~/.local/bin/openclaw onboard --install-daemon")
 
 print(f"Running: {cmd}")
 print("=" * 60)

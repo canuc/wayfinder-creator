@@ -22,7 +22,7 @@ homebrew_prefix: "{{ '/opt/homebrew' if ansible_os_family == 'Darwin' else '/hom
 package_manager: "{{ 'brew' if ansible_os_family == 'Darwin' else 'apt' }}"
 
 # Installation mode: 'release' or 'development'
-# release: Install via pnpm install -g clawdbot@latest
+# release: Install via pnpm install -g openclaw@latest
 # development: Clone repo, build from source, link globally
 clawdbot_install_mode: "release"
 
@@ -36,13 +36,20 @@ clawdbot_repo_dir: "{{ clawdbot_code_dir }}/clawdbot"
 # Add your public SSH keys here to allow SSH access as clawdbot user
 # Example:
 #   clawdbot_ssh_keys:
-#     - "ssh-ed25519 AAAAC3... user@host"
+#     - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx user@host"
+#     - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDxxxxxxxxxxxxxxxxxxxxxxx user@host"
 clawdbot_ssh_keys: []
 
-# Anthropic API key for AI model access
-# Passed via --extra-vars from the creator API
+# AI provider API keys (passed via --extra-vars from the creator API)
+# Only one is required - determines the auth-choice for onboarding
 anthropic_api_key: ""
+openai_api_key: ""
+gemini_api_key: ""
 
 # Wayfinder API key for Wayfinder Paths SDK
-# Passed via --extra-vars from the creator API
 wayfinder_api_key: ""
+
+# Channel configuration (passed via --extra-vars from the creator API)
+# List of channel objects: [{type: telegram, token: "...", name: "...", account: "..."}]
+# Supported types: telegram, discord, whatsapp, signal, slack, googlechat, mattermost
+channels: []

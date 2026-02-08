@@ -18,9 +18,29 @@ type Provisioner struct {
 }
 
 func NewProvisioner(cfg *Config) *Provisioner {
+	keyPath := expandHome(cfg.SSHPrivateKey)
+
+	// If raw key data is provided via env, write it to a temp file and use that instead.
+	// This avoids needing to mount/copy an SSH key file into a container.
+	if cfg.SSHPrivateKeyData != "" {
+		f, err := os.CreateTemp("", "ssh-private-key-*")
+		if err != nil {
+			slog.Error("failed to create temp file for SSH key data", "error", err)
+		} else {
+			data := cfg.SSHPrivateKeyData + "\n"
+			if err := os.WriteFile(f.Name(), []byte(data), 0600); err != nil {
+				slog.Error("failed to write SSH key data", "error", err)
+			} else {
+				keyPath = f.Name()
+				slog.Info("using SSH key from SSH_PRIVATE_KEY_DATA env")
+			}
+			f.Close()
+		}
+	}
+
 	return &Provisioner{
 		ansibleDir:    cfg.AnsibleDir,
-		sshPrivateKey: expandHome(cfg.SSHPrivateKey),
+		sshPrivateKey: keyPath,
 	}
 }
 
@@ -28,7 +48,10 @@ type ProvisionOpts struct {
 	IP              string
 	SSHPublicKey    string
 	AnthropicAPIKey string
+	OpenAIAPIKey    string
+	GeminiAPIKey    string
 	WayfinderAPIKey string
+	Channels        []ChannelConfig
 }
 
 func (p *Provisioner) WaitForSSH(ip string) error {
@@ -55,7 +78,17 @@ type ProvisionResult struct {
 }
 
 func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) {
-	slog.Info("starting provisioning", "ip", opts.IP)
+	slog.Info("starting provisioning",
+		"ip", opts.IP,
+		"ansible_dir", p.ansibleDir,
+		"ssh_key", p.sshPrivateKey,
+		"has_ssh_public_key", opts.SSHPublicKey != "",
+		"has_anthropic_key", opts.AnthropicAPIKey != "",
+		"has_openai_key", opts.OpenAIAPIKey != "",
+		"has_gemini_key", opts.GeminiAPIKey != "",
+		"has_wayfinder_key", opts.WayfinderAPIKey != "",
+		"channels", len(opts.Channels),
+	)
 
 	// Write a temporary inventory file
 	inventoryContent := fmt.Sprintf("[openclaw]\n%s ansible_user=root ansible_ssh_private_key_file=%s ansible_ssh_common_args='-o StrictHostKeyChecking=no'\n", opts.IP, p.sshPrivateKey)
@@ -72,13 +105,18 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 	}
 	inventoryFile.Close()
 
-	args := []string{"-i", inventoryFile.Name(), "playbook.yml"}
+	slog.Info("inventory written", "ip", opts.IP, "file", inventoryFile.Name(), "content", inventoryContent)
+
+	args := []string{"-i", inventoryFile.Name(), "playbook.yml", "-vv"}
 
 	// Build extra vars from provision options
 	extraVars := p.buildExtraVars(opts)
 	if extraVars != "" {
 		args = append(args, "--extra-vars", extraVars)
+		slog.Info("extra vars configured", "ip", opts.IP, "extra_vars", extraVars)
 	}
+
+	slog.Info("launching ansible-playbook", "ip", opts.IP, "args", strings.Join(args, " "), "cwd", p.ansibleDir)
 
 	cmd := exec.Command("ansible-playbook", args...)
 	cmd.Dir = p.ansibleDir
@@ -90,12 +128,15 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 	}
 	cmd.Stderr = cmd.Stdout // merge stderr into stdout
 
+	startTime := time.Now()
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start ansible-playbook: %w", err)
 	}
+	slog.Info("ansible-playbook started", "ip", opts.IP, "pid", cmd.Process.Pid)
 
 	var output strings.Builder
 	buf := make([]byte, 4096)
+	lastLogTime := time.Now()
 	for {
 		n, readErr := stdout.Read(buf)
 		if n > 0 {
@@ -107,14 +148,26 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 					slog.Info("ansible", "ip", opts.IP, "out", line)
 				}
 			}
+			lastLogTime = time.Now()
 		}
 		if readErr != nil {
 			break
 		}
+		// Warn if no output for 60 seconds (likely stuck on interactive prompt)
+		if time.Since(lastLogTime) > 60*time.Second {
+			elapsed := time.Since(startTime).Round(time.Second)
+			slog.Warn("ansible appears stalled - no output for 60s (may be stuck on interactive prompt)",
+				"ip", opts.IP,
+				"elapsed", elapsed.String(),
+				"last_output_ago", time.Since(lastLogTime).Round(time.Second).String(),
+			)
+			lastLogTime = time.Now() // reset so we don't spam
+		}
 	}
 
+	elapsed := time.Since(startTime).Round(time.Second)
 	if err := cmd.Wait(); err != nil {
-		slog.Error("provisioning failed", "ip", opts.IP, "error", err)
+		slog.Error("provisioning failed", "ip", opts.IP, "error", err, "elapsed", elapsed.String(), "output_bytes", output.Len())
 		return nil, fmt.Errorf("ansible-playbook: %w\n%s", err, output.String())
 	}
 
@@ -122,7 +175,7 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts) (*ProvisionResult, error) 
 		WalletAddress: parseWalletAddress(output.String()),
 	}
 
-	slog.Info("provisioning completed", "ip", opts.IP, "wallet_address", result.WalletAddress)
+	slog.Info("provisioning completed", "ip", opts.IP, "wallet_address", result.WalletAddress, "elapsed", elapsed.String())
 	return result, nil
 }
 
@@ -135,8 +188,32 @@ func (p *Provisioner) buildExtraVars(opts ProvisionOpts) string {
 	if opts.AnthropicAPIKey != "" {
 		vars["anthropic_api_key"] = opts.AnthropicAPIKey
 	}
+	if opts.OpenAIAPIKey != "" {
+		vars["openai_api_key"] = opts.OpenAIAPIKey
+	}
+	if opts.GeminiAPIKey != "" {
+		vars["gemini_api_key"] = opts.GeminiAPIKey
+	}
 	if opts.WayfinderAPIKey != "" {
 		vars["wayfinder_api_key"] = opts.WayfinderAPIKey
+	}
+	if len(opts.Channels) > 0 {
+		// Pass channels as a JSON-serializable list for Ansible
+		channels := make([]map[string]string, len(opts.Channels))
+		for i, ch := range opts.Channels {
+			m := map[string]string{"type": ch.Type}
+			if ch.Token != "" {
+				m["token"] = ch.Token
+			}
+			if ch.Name != "" {
+				m["name"] = ch.Name
+			}
+			if ch.Account != "" {
+				m["account"] = ch.Account
+			}
+			channels[i] = m
+		}
+		vars["channels"] = channels
 	}
 	if len(vars) == 0 {
 		return ""

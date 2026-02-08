@@ -1,9 +1,12 @@
 ---
+# Linux-specific firewall configuration (UFW) with security hardening
+
 # Install and configure fail2ban for SSH brute-force protection
 - name: Install fail2ban
   ansible.builtin.apt:
     name: fail2ban
     state: present
+    update_cache: true
 
 - name: Configure fail2ban for SSH protection
   ansible.builtin.copy:
@@ -23,6 +26,7 @@
       enabled = true
       port = ssh
       filter = sshd
+      # logpath not needed - systemd backend reads from journal
   notify: Restart fail2ban
 
 - name: Enable and start fail2ban
@@ -57,6 +61,7 @@
     group: root
     mode: '0644'
     content: |
+      // Clawdbot security hardening - automatic security updates
       Unattended-Upgrade::Allowed-Origins {
           "${distro_id}:${distro_codename}-security";
           "${distro_id}ESMApps:${distro_codename}-apps-security";
@@ -74,6 +79,7 @@
   ansible.builtin.apt:
     name: ufw
     state: present
+    update_cache: true
 
 - name: Set UFW default policies
   community.general.ufw:

@@ -1,4 +1,6 @@
 ---
+# Linux-specific Tailscale installation (Debian/Ubuntu)
+
 - name: Add Tailscale GPG key
   ansible.builtin.shell:
     cmd: |
@@ -42,10 +44,18 @@
   changed_when: false
   failed_when: false
 
-- name: Display Tailscale auth instructions if not connected (Linux)
+- name: Display Tailscale auth URL if not connected (Linux)
   ansible.builtin.debug:
     msg:
+      - "============================================"
       - "Tailscale installed but not connected yet"
-      - "To connect: sudo tailscale up"
-      - "For unattended: sudo tailscale up --authkey tskey-auth-xxxxx"
+      - "============================================"
+      - ""
+      - "To connect this machine to your Tailnet:"
+      - "Run: sudo tailscale up"
+      - ""
+      - "For unattended installation, use an auth key:"
+      - "sudo tailscale up --authkey tskey-auth-xxxxx"
+      - ""
+      - "Get auth key from: https://login.tailscale.com/admin/settings/keys"
   when: tailscale_status_linux.rc != 0

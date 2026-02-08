@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>openclaw creator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #09090b;
+    --bg-raised: #111113;
+    --bg-input: #0c0c0e;
+    --surface: #18181b;
+    --border: #27272a;
+    --border-hover: #3f3f46;
+    --accent: #22c55e;
+    --accent-muted: rgba(34, 197, 94, 0.15);
+    --accent-text: #4ade80;
+    --red: #ef4444;
+    --red-muted: rgba(239, 68, 68, 0.12);
+    --yellow: #eab308;
+    --yellow-muted: rgba(234, 179, 8, 0.12);
+    --cyan: #06b6d4;
+    --text: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-tertiary: #52525b;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', -apple-system, system-ui, sans-serif;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 4rem;
+  }
+
+  /* Header */
+  header {
+    margin-bottom: 2.5rem;
+  }
+
+  .logo-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+
+  .logo-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--accent) 0%, #16a34a 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 14px;
+    color: #000;
+  }
+
+  h1 {
+    font-family: var(--sans);
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  h1 span {
+    color: var(--text-tertiary);
+    font-weight: 400;
+  }
+
+  .subtitle {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+  }
+
+  /* Sections */
+  .section-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.75rem;
+  }
+
+  /* Card */
+  .card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1.75rem;
+  }
+
+  /* Form */
+  .form-grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+
+  label .hint {
+    color: var(--text-tertiary);
+    font-weight: 400;
+  }
+
+  select {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 0.8rem;
+    padding: 0.55rem 0.75rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2352525b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+
+  select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-muted);
+  }
+
+  select option {
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  input, textarea {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    padding: 0.55rem 0.75rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-muted);
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 72px;
+    line-height: 1.5;
+  }
+
+  .input-wrap {
+    position: relative;
+  }
+
+  .input-wrap .toggle-vis {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    padding: 2px 6px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .input-wrap .toggle-vis:hover {
+    color: var(--text-secondary);
+    border-color: var(--border-hover);
+  }
+
+  /* Buttons */
+  .btn {
+    font-family: var(--sans);
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.55rem 1.25rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: #16a34a;
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-tertiary);
+    border: 1px solid var(--border);
+    font-size: 0.7rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+  }
+
+  .btn-ghost:hover {
+    color: var(--red);
+    border-color: var(--red);
+    background: var(--red-muted);
+  }
+
+  .actions {
+    margin-top: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  /* Status message */
+  .status-msg {
+    font-size: 0.75rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: var(--radius);
+    margin-top: 1rem;
+    display: none;
+  }
+
+  .status-msg.show { display: block; }
+  .status-msg.ok { color: var(--accent-text); background: var(--accent-muted); }
+  .status-msg.err { color: #fca5a5; background: var(--red-muted); }
+
+  /* Table */
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+
+  th {
+    text-align: left;
+    color: var(--text-tertiary);
+    font-weight: 500;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0 0.75rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 0.65rem 0.75rem;
+    border-bottom: 1px solid rgba(39, 39, 42, 0.5);
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  td.name-col {
+    color: var(--text);
+    font-family: var(--sans);
+    font-weight: 500;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.2rem 0.55rem;
+    border-radius: 100px;
+    font-family: var(--sans);
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+
+  .status-pill .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .status-provisioning {
+    color: var(--yellow);
+    background: var(--yellow-muted);
+  }
+  .status-provisioning .dot {
+    background: var(--yellow);
+    animation: pulse-dot 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .status-ready {
+    color: var(--accent-text);
+    background: var(--accent-muted);
+  }
+  .status-ready .dot { background: var(--accent); }
+
+  .status-failed {
+    color: #fca5a5;
+    background: var(--red-muted);
+  }
+  .status-failed .dot { background: var(--red); }
+
+  .empty-state {
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+    padding: 2.5rem 1rem;
+    text-align: center;
+  }
+
+  .wallet {
+    color: var(--cyan);
+    font-size: 0.7rem;
+  }
+
+  /* Channels */
+  .channel-row {
+    display: grid;
+    grid-template-columns: 140px 1fr auto;
+    gap: 0.5rem;
+    align-items: end;
+    margin-bottom: 0.5rem;
+  }
+
+  .channel-row select,
+  .channel-row input {
+    font-size: 0.75rem;
+    padding: 0.45rem 0.6rem;
+  }
+
+  .channel-row .btn-remove {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0.45rem 0.5rem;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .channel-row .btn-remove:hover {
+    color: var(--red);
+    border-color: var(--red);
+  }
+
+  .btn-add-channel {
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    transition: color 0.15s, border-color 0.15s;
+    margin-top: 0.25rem;
+  }
+
+  .btn-add-channel:hover {
+    color: var(--accent-text);
+    border-color: var(--accent);
+  }
+
+  /* Footer */
+  footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    text-align: center;
+  }
+
+  /* responsive */
+  @media (max-width: 640px) {
+    .container { padding: 1.5rem 1rem 3rem; }
+    .form-row { grid-template-columns: 1fr; }
+    td, th { padding: 0.4rem 0.5rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo-row">
+      <div class="logo-mark">oc</div>
+      <h1>openclaw <span>creator</span></h1>
+    </div>
+    <div class="subtitle">Cloud server provisioning</div>
+  </header>
+
+  <section>
+    <div class="section-label">Deploy</div>
+    <div class="card">
+      <form id="create-form">
+        <div class="form-grid">
+          <div>
+            <label>Server name <span class="hint">(auto-generated if blank)</span></label>
+            <input type="text" id="f-name" placeholder="claw-myserver" autocomplete="off" spellcheck="false">
+          </div>
+          <div>
+            <label>SSH public key</label>
+            <textarea id="f-ssh" placeholder="ssh-ed25519 AAAA..." spellcheck="false"></textarea>
+          </div>
+          <div class="form-row">
+            <div>
+              <label>AI provider</label>
+              <select id="f-provider">
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI (ChatGPT)</option>
+                <option value="gemini">Google Gemini</option>
+              </select>
+            </div>
+            <div>
+              <label id="provider-key-label">Anthropic API key</label>
+              <div class="input-wrap">
+                <input type="password" id="f-provider-key" placeholder="sk-ant-api03-..." autocomplete="off" spellcheck="false">
+                <button type="button" class="toggle-vis" data-target="f-provider-key">show</button>
+              </div>
+            </div>
+          </div>
+          <div id="channels-section">
+            <label>Channels <span class="hint">(optional)</span></label>
+            <div id="channels-list"></div>
+            <button type="button" class="btn-add-channel" id="add-channel-btn">+ Add channel</button>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="submit-btn">Deploy server</button>
+        </div>
+        <div class="status-msg" id="form-status"></div>
+      </form>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">Servers</div>
+    <div class="card">
+      <div class="table-wrap">
+        <div id="server-list">
+          <div class="empty-state">No servers running. Deploy one to get started.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    openclaw creator
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const API = '';
+  let polling = null;
+
+  // Toggle password visibility
+  document.querySelectorAll('.toggle-vis').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById(btn.dataset.target);
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = 'hide';
+      } else {
+        input.type = 'password';
+        btn.textContent = 'show';
+      }
+    });
+  });
+
+  // Provider dropdown -> update key label and placeholder
+  const providerMeta = {
+    anthropic: { label: 'Anthropic API key', placeholder: 'sk-ant-api03-...' },
+    openai: { label: 'OpenAI API key', placeholder: 'sk-...' },
+    gemini: { label: 'Gemini API key', placeholder: 'AI...' },
+  };
+  document.getElementById('f-provider').addEventListener('change', function () {
+    const m = providerMeta[this.value] || providerMeta.anthropic;
+    document.getElementById('provider-key-label').textContent = m.label;
+    const input = document.getElementById('f-provider-key');
+    input.placeholder = m.placeholder;
+    input.value = '';
+  });
+
+  // Dynamic channels
+  let channelCount = 0;
+  const channelTypes = ['telegram', 'discord', 'slack', 'whatsapp', 'signal', 'googlechat', 'mattermost'];
+
+  document.getElementById('add-channel-btn').addEventListener('click', addChannelRow);
+
+  function addChannelRow() {
+    channelCount++;
+    const id = channelCount;
+    const row = document.createElement('div');
+    row.className = 'channel-row';
+    row.dataset.channelId = id;
+    row.innerHTML =
+      '<select data-field="type">' + channelTypes.map(t => '<option value="' + t + '">' + t.charAt(0).toUpperCase() + t.slice(1) + '</option>').join('') + '</select>' +
+      '<div class="input-wrap"><input type="password" data-field="token" placeholder="bot token..." autocomplete="off" spellcheck="false"><button type="button" class="toggle-vis" data-target="ch-tok-' + id + '">show</button></div>' +
+      '<button type="button" class="btn-remove">&times;</button>';
+    row.querySelector('input').id = 'ch-tok-' + id;
+    row.querySelector('.btn-remove').addEventListener('click', () => row.remove());
+    row.querySelector('.toggle-vis').addEventListener('click', function () {
+      const inp = document.getElementById(this.dataset.target);
+      if (inp.type === 'password') { inp.type = 'text'; this.textContent = 'hide'; }
+      else { inp.type = 'password'; this.textContent = 'show'; }
+    });
+    document.getElementById('channels-list').appendChild(row);
+  }
+
+  function getChannels() {
+    const rows = document.querySelectorAll('.channel-row');
+    const channels = [];
+    rows.forEach(row => {
+      const type = row.querySelector('[data-field="type"]').value;
+      const token = row.querySelector('[data-field="token"]').value.trim();
+      if (type && token) channels.push({ type, token });
+    });
+    return channels;
+  }
+
+  // Form submission
+  const form = document.getElementById('create-form');
+  const submitBtn = document.getElementById('submit-btn');
+  const statusEl = document.getElementById('form-status');
+
+  function showStatus(msg, ok) {
+    statusEl.textContent = msg;
+    statusEl.className = 'status-msg show ' + (ok ? 'ok' : 'err');
+    if (ok) setTimeout(() => { statusEl.className = 'status-msg'; }, 5000);
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Deploying...';
+    statusEl.className = 'status-msg';
+
+    const body = {};
+    const name = document.getElementById('f-name').value.trim();
+    const ssh = document.getElementById('f-ssh').value.trim();
+    const provider = document.getElementById('f-provider').value;
+    const providerKey = document.getElementById('f-provider-key').value.trim();
+    const channels = getChannels();
+
+    if (name) body.name = name;
+    if (ssh) body.ssh_public_key = ssh;
+    if (providerKey) {
+      if (provider === 'anthropic') body.anthropic_api_key = providerKey;
+      else if (provider === 'openai') body.openai_api_key = providerKey;
+      else if (provider === 'gemini') body.gemini_api_key = providerKey;
+    }
+    if (channels.length > 0) body.channels = channels;
+
+    try {
+      const res = await fetch(API + '/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showStatus('Error: ' + (data.error || res.statusText), false);
+        return;
+      }
+      showStatus('Server ' + data.name + ' created (id: ' + data.id + ') \u2014 provisioning started', true);
+      form.reset();
+      refreshServers();
+      startPolling();
+    } catch (err) {
+      showStatus('Network error: ' + err.message, false);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Deploy server';
+    }
+  });
+
+  // Server list
+  async function refreshServers() {
+    try {
+      const res = await fetch(API + '/servers');
+      if (!res.ok) return;
+      const servers = await res.json();
+      renderServers(servers);
+
+      const hasProvisioning = servers.some(s => s.status === 'provisioning');
+      if (hasProvisioning && !polling) startPolling();
+      if (!hasProvisioning && polling) stopPolling();
+    } catch (_) {}
+  }
+
+  function renderServers(servers) {
+    const el = document.getElementById('server-list');
+    if (!servers || servers.length === 0) {
+      el.innerHTML = '<div class="empty-state">No servers running. Deploy one to get started.</div>';
+      return;
+    }
+
+    let html = '<table><thead><tr>';
+    html += '<th>Name</th><th>Status</th><th>IP</th><th>Wallet</th><th></th>';
+    html += '</tr></thead><tbody>';
+
+    for (const s of servers) {
+      const sc = s.status === 'ready' ? 'ready' : s.status === 'failed' ? 'failed' : 'provisioning';
+      const badge = '<span class="status-pill status-' + sc + '"><span class="dot"></span>' + s.status + '</span>';
+      const wallet = s.wallet_address
+        ? '<span class="wallet">' + s.wallet_address.slice(0, 6) + '\u2026' + s.wallet_address.slice(-4) + '</span>'
+        : '<span style="color:var(--text-tertiary)">\u2014</span>';
+
+      html += '<tr>';
+      html += '<td class="name-col">' + s.name + '</td>';
+      html += '<td>' + badge + '</td>';
+      html += '<td>' + (s.ipv4 || '\u2014') + '</td>';
+      html += '<td>' + wallet + '</td>';
+      html += '<td style="text-align:right"><button class="btn-ghost" onclick="deleteServer(' + s.id + ')">Delete</button></td>';
+      html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  function startPolling() {
+    if (polling) return;
+    polling = setInterval(refreshServers, 5000);
+  }
+
+  function stopPolling() {
+    if (polling) { clearInterval(polling); polling = null; }
+  }
+
+  // Delete server
+  window.deleteServer = async function (id) {
+    if (!confirm('Terminate server ' + id + '?')) return;
+    try {
+      const res = await fetch(API + '/servers/' + id, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        alert('Delete failed: ' + (data.error || res.statusText));
+        return;
+      }
+      refreshServers();
+    } catch (err) {
+      alert('Network error: ' + err.message);
+    }
+  };
+
+  // Initial load
+  refreshServers();
+  startPolling();
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,9 @@
 ---
+# Release mode installation - Install via pnpm from npm registry
+
 - name: Install Clawdbot globally as clawdbot user (using pnpm)
   ansible.builtin.shell:
-    cmd: pnpm install -g clawdbot@latest
+    cmd: pnpm install -g openclaw@latest
     executable: /bin/bash
   become: true
   become_user: "{{ clawdbot_user }}"
@@ -14,7 +16,7 @@
 
 - name: Verify clawdbot installation
   ansible.builtin.shell:
-    cmd: "{{ clawdbot_home }}/.local/bin/clawdbot --version"
+    cmd: "{{ clawdbot_home }}/.local/bin/openclaw --version"
     executable: /bin/bash
   become: true
   become_user: "{{ clawdbot_user }}"
@@ -23,4 +25,4 @@
 
 - name: Display installed Clawdbot version (release)
   ansible.builtin.debug:
-    msg: "Clawdbot installed from npm: {{ clawdbot_version.stdout }}"
+    msg: "✅ Clawdbot installed from npm: {{ clawdbot_version.stdout }}"

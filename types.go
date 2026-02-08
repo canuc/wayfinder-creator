@@ -4,11 +4,21 @@ import "sync"
 
 // Request/response types
 
+type ChannelConfig struct {
+	Type    string `json:"type"`              // telegram, discord, slack, whatsapp, signal, googlechat, mattermost
+	Token   string `json:"token,omitempty"`   // bot token (telegram, discord, slack)
+	Name    string `json:"name,omitempty"`    // display name for the account
+	Account string `json:"account,omitempty"` // account id (default: "default")
+}
+
 type CreateServerRequest struct {
-	Name            string `json:"name"`
-	SSHPublicKey    string `json:"ssh_public_key,omitempty"`
-	AnthropicAPIKey string `json:"anthropic_api_key,omitempty"`
-	WayfinderAPIKey string `json:"wayfinder_api_key,omitempty"`
+	Name            string          `json:"name"`
+	SSHPublicKey    string          `json:"ssh_public_key,omitempty"`
+	AnthropicAPIKey string          `json:"anthropic_api_key,omitempty"`
+	OpenAIAPIKey    string          `json:"openai_api_key,omitempty"`
+	GeminiAPIKey    string          `json:"gemini_api_key,omitempty"`
+	WayfinderAPIKey string          `json:"wayfinder_api_key,omitempty"`
+	Channels        []ChannelConfig `json:"channels,omitempty"`
 }
 
 type CreateServerResponse struct {
@@ -92,4 +102,14 @@ func (t *ServerTracker) Remove(id int64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.servers, id)
+}
+
+func (t *ServerTracker) List() []*ServerInfo {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	list := make([]*ServerInfo, 0, len(t.servers))
+	for _, info := range t.servers {
+		list = append(list, info)
+	}
+	return list
 }

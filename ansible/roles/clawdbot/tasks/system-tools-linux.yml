@@ -1,4 +1,6 @@
 ---
+# Linux-specific system tools installation (apt-based)
+
 - name: Install essential system tools (Linux - apt)
   ansible.builtin.apt:
     name:
@@ -41,9 +43,8 @@
       # Build essentials for Homebrew on Linux
       - build-essential
       - file
-      # Required for ansible expect module
-      - python3-pexpect
     state: present
+    update_cache: true
 
 - name: Set zsh as default shell for clawdbot user (Linux)
   ansible.builtin.user:

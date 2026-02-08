@@ -19,10 +19,10 @@ Environment="XDG_RUNTIME_DIR=/run/user/{{ clawdbot_uid_value | default('1000') }
 Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ clawdbot_uid_value | default('1000') }}/bus"
 
 # Credentials
-EnvironmentFile=-{{ clawdbot_home }}/.clawdbot/credentials/anthropic.env
+EnvironmentFile=-{{ clawdbot_config_dir }}/credentials/provider.env
 
 # Start command
-ExecStart={{ clawdbot_home }}/.local/bin/clawdbot gateway
+ExecStart={{ clawdbot_home }}/.local/bin/openclaw gateway
 
 # Restart policy
 Restart=always
@@ -33,7 +33,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths={{ clawdbot_home }}/.clawdbot
+ReadWritePaths={{ clawdbot_config_dir }}
 ReadWritePaths={{ clawdbot_home }}/.local
 
 # Logging

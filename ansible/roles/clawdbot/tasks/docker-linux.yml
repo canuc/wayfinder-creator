@@ -1,4 +1,6 @@
 ---
+# Linux-specific Docker installation (apt-based)
+
 - name: Install required system packages for Docker
   ansible.builtin.apt:
     name:
@@ -7,6 +9,7 @@
       - gnupg
       - lsb-release
     state: present
+    update_cache: true
 
 - name: Create directory for Docker GPG key
   ansible.builtin.file:

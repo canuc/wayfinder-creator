@@ -2,12 +2,16 @@ package main
 
 import (
 	"crypto/rand"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 )
+
+//go:embed static/index.html
+var indexHTML embed.FS
 
 type Server struct {
 	hetzner     *HetznerClient
@@ -26,8 +30,10 @@ func NewServer(hetzner *HetznerClient, provisioner *Provisioner, tracker *Server
 func (s *Server) Router() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /servers", s.handleCreateServer)
+	mux.HandleFunc("GET /servers", s.handleListServers)
 	mux.HandleFunc("GET /servers/{id}", s.handleGetServer)
 	mux.HandleFunc("DELETE /servers/{id}", s.handleDeleteServer)
+	mux.HandleFunc("GET /", s.handleIndex)
 	return mux
 }
 
@@ -75,7 +81,10 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 		IP:              info.IPv4,
 		SSHPublicKey:    req.SSHPublicKey,
 		AnthropicAPIKey: req.AnthropicAPIKey,
+		OpenAIAPIKey:    req.OpenAIAPIKey,
+		GeminiAPIKey:    req.GeminiAPIKey,
 		WayfinderAPIKey: req.WayfinderAPIKey,
+		Channels:        req.Channels,
 	})
 
 	writeJSON(w, http.StatusAccepted, CreateServerResponse{
@@ -128,6 +137,36 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 		ID:      id,
 		Deleted: true,
 	})
+}
+
+func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
+	servers := s.tracker.List()
+	type item struct {
+		ID            int64  `json:"id"`
+		Name          string `json:"name"`
+		Status        string `json:"status"`
+		IPv4          string `json:"ipv4"`
+		Provisioned   bool   `json:"provisioned"`
+		WalletAddress string `json:"wallet_address,omitempty"`
+	}
+	out := make([]item, len(servers))
+	for i, info := range servers {
+		out[i] = item{
+			ID:            info.ID,
+			Name:          info.Name,
+			Status:        info.Status,
+			IPv4:          info.IPv4,
+			Provisioned:   info.Provisioned,
+			WalletAddress: info.WalletAddress,
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	data, _ := indexHTML.ReadFile("static/index.html")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(data)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
