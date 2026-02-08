@@ -1390,7 +1390,7 @@
 
   function renderPairingRequests(requests) {
     const el = document.getElementById('pairing-list');
-    const pending = requests.filter(r => r.status === 'pending');
+    const pending = requests.filter(r => !r.status || r.status === 'pending');
 
     if (pending.length === 0) {
       el.innerHTML = '<div class="empty-state">No pending pairing requests.</div>';
@@ -1405,11 +1405,12 @@
       html += '<tr>';
       html += '<td class="name-col" style="font-family:var(--sans)">' + escHtml(r.server_name) + '</td>';
       html += '<td>' + escHtml(r.channel) + '</td>';
-      html += '<td>' + escHtml(r.user || r.id) + '</td>';
+      const userName = r.meta ? [r.meta.firstName, r.meta.lastName].filter(Boolean).join(' ') : '';
+      html += '<td>' + escHtml(userName || r.id) + '</td>';
       html += '<td>' + escHtml(r.created_at || '') + '</td>';
       html += '<td><div class="pairing-actions">';
-      html += '<button class="btn-approve" onclick="approvePairing(' + r.server_id + ',\'' + escHtml(r.channel) + '\',\'' + escHtml(r.id) + '\')">Approve</button>';
-      html += '<button class="btn-deny" onclick="denyPairing(' + r.server_id + ',\'' + escHtml(r.channel) + '\',\'' + escHtml(r.id) + '\')">Deny</button>';
+      html += '<button class="btn-approve" onclick="approvePairing(' + r.server_id + ',\'' + escHtml(r.channel) + '\',\'' + escHtml(r.code) + '\')">Approve</button>';
+      html += '<button class="btn-deny" onclick="denyPairing(' + r.server_id + ',\'' + escHtml(r.channel) + '\',\'' + escHtml(r.code) + '\')">Deny</button>';
       html += '</div></td>';
       html += '</tr>';
     }
@@ -1418,8 +1419,8 @@
     el.innerHTML = html;
   }
 
-  window.approvePairing = async function (serverId, channel, id) {
-    const body = JSON.stringify({ channel, id });
+  window.approvePairing = async function (serverId, channel, code) {
+    const body = JSON.stringify({ channel, code });
     try {
       const res = await signedFetch(
         '/servers/' + serverId + '/pairing/approve',
@@ -1438,8 +1439,8 @@
     }
   };
 
-  window.denyPairing = async function (serverId, channel, id) {
-    const body = JSON.stringify({ channel, id });
+  window.denyPairing = async function (serverId, channel, code) {
+    const body = JSON.stringify({ channel, code });
     try {
       const res = await signedFetch(
         '/servers/' + serverId + '/pairing/deny',

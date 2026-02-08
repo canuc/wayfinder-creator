@@ -112,14 +112,14 @@ func handlePairingApprove(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req struct {
 		Channel string `json:"channel"`
-		ID      string `json:"id"`
+		Code    string `json:"code"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Channel == "" || req.ID == "" {
-		writeError(w, http.StatusBadRequest, "channel and id are required")
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Channel == "" || req.Code == "" {
+		writeError(w, http.StatusBadRequest, "channel and code are required")
 		return
 	}
 
-	out, err := runCLI(r.Context(), "pairing", "approve", req.Channel, req.ID)
+	out, err := runCLI(r.Context(), "pairing", "approve", req.Channel, req.Code)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("approve failed: %v: %s", err, string(out)))
 		return
@@ -133,14 +133,14 @@ func handlePairingDeny(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req struct {
 		Channel string `json:"channel"`
-		ID      string `json:"id"`
+		Code    string `json:"code"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Channel == "" || req.ID == "" {
-		writeError(w, http.StatusBadRequest, "channel and id are required")
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Channel == "" || req.Code == "" {
+		writeError(w, http.StatusBadRequest, "channel and code are required")
 		return
 	}
 
-	out, err := runCLI(r.Context(), "pairing", "deny", req.Channel, req.ID)
+	out, err := runCLI(r.Context(), "pairing", "deny", req.Channel, req.Code)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("deny failed: %v: %s", err, string(out)))
 		return

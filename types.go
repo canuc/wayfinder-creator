@@ -76,5 +76,5 @@ type PairingRequest struct {
 
 type PairingActionRequest struct {
 	Channel string `json:"channel"`
-	ID      string `json:"id"`
+	Code    string `json:"code"`
 }
