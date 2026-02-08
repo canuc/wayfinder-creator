@@ -92,9 +92,9 @@ func (s *Store) CreateServer(info *ServerInfo, opts ProvisionOpts) error {
 func (s *Store) GetServer(id int64) (*ServerInfo, error) {
 	var info ServerInfo
 	err := s.db.QueryRow(`
-		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed
+		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed, (public_key != '') AS has_node_api
 		FROM servers WHERE id=$1
-	`, id).Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned, &info.WalletAddress, &info.DefaultKeyRemoved)
+	`, id).Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned, &info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (s *Store) GetServer(id int64) (*ServerInfo, error) {
 
 func (s *Store) ListServers() ([]*ServerInfo, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed
+		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed, (public_key != '') AS has_node_api
 		FROM servers ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -114,7 +114,7 @@ func (s *Store) ListServers() ([]*ServerInfo, error) {
 	var servers []*ServerInfo
 	for rows.Next() {
 		var info ServerInfo
-		if err := rows.Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned, &info.WalletAddress, &info.DefaultKeyRemoved); err != nil {
+		if err := rows.Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned, &info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI); err != nil {
 			return nil, err
 		}
 		servers = append(servers, &info)

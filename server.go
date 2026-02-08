@@ -223,6 +223,7 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 		Provisioned       bool   `json:"provisioned"`
 		WalletAddress     string `json:"wallet_address,omitempty"`
 		DefaultKeyRemoved bool   `json:"default_key_removed"`
+		HasNodeAPI        bool   `json:"has_node_api"`
 	}
 	out := make([]item, len(servers))
 	for i, info := range servers {
@@ -234,6 +235,7 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 			Provisioned:       info.Provisioned,
 			WalletAddress:     info.WalletAddress,
 			DefaultKeyRemoved: info.DefaultKeyRemoved,
+			HasNodeAPI:        info.HasNodeAPI,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -462,6 +464,10 @@ func (s *Server) proxyToNode(w http.ResponseWriter, r *http.Request, serverID in
 	}
 	if info.Status != "ready" {
 		writeJSON(w, http.StatusConflict, ErrorResponse{Error: "server is not ready"})
+		return
+	}
+	if !info.HasNodeAPI {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "node API not deployed on this server"})
 		return
 	}
 

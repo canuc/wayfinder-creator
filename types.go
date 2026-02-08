@@ -56,6 +56,7 @@ type ServerInfo struct {
 	Provisioned       bool
 	WalletAddress     string
 	DefaultKeyRemoved bool
+	HasNodeAPI        bool
 }
 
 type LogEntry struct {

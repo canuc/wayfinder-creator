@@ -1172,8 +1172,8 @@
       if (hasProvisioning && !polling) startPolling();
       if (!hasProvisioning && polling) stopPolling();
 
-      const hasReady = servers.some(s => s.status === 'ready');
-      if (hasReady) startPairingPoll();
+      const hasNodeAPI = servers.some(s => s.status === 'ready' && s.has_node_api);
+      if (hasNodeAPI) startPairingPoll();
       else stopPairingPoll();
     } catch (_) {}
   }
@@ -1359,7 +1359,7 @@
   let lastServers = [];
 
   async function refreshPairingRequests() {
-    const readyServers = lastServers.filter(s => s.status === 'ready');
+    const readyServers = lastServers.filter(s => s.status === 'ready' && s.has_node_api);
     if (readyServers.length === 0) {
       document.getElementById('pairing-section').style.display = 'none';
       return;
