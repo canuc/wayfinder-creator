@@ -32,8 +32,8 @@ clawdbot_repo_branch: "main"
 clawdbot_code_dir: "{{ clawdbot_home }}/code"
 clawdbot_repo_dir: "{{ clawdbot_code_dir }}/clawdbot"
 
-# SSH keys for clawdbot user
-# Add your public SSH keys here to allow SSH access as clawdbot user
+# SSH keys for root user
+# Add your public SSH keys here to allow SSH access as root user
 # Example:
 #   clawdbot_ssh_keys:
 #     - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx user@host"

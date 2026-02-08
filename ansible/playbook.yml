@@ -192,4 +192,29 @@
 
     - name: Notify that playbook is complete
       ansible.builtin.debug:
-        msg: "✅ Clawdbot installation complete!"
+        msg: "✅ Clawdbot installation complete! Rebooting server..."
+
+    - name: Reboot server
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        pre_reboot_delay: 5
+        post_reboot_delay: 60
+        test_command: uptime
+        connect_timeout: 30
+      register: reboot_result
+
+    - name: Display reboot status
+      ansible.builtin.debug:
+        msg: "✅ Server rebooted successfully. Uptime: {{ reboot_result.elapsed }} seconds since reboot initiated."
+
+    - name: Remove Hetzner provisioning key, keep only user key
+      ansible.builtin.authorized_key:
+        user: root
+        state: present
+        key: "{{ clawdbot_ssh_keys | join('\n') }}"
+        exclusive: true
+      when: clawdbot_ssh_keys | length > 0
+
+    - name: Display SSH lockdown status
+      ansible.builtin.debug:
+        msg: "🔒 Hetzner provisioning key removed. Only user SSH key remains on root."

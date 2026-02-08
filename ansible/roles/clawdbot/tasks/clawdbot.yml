@@ -342,6 +342,54 @@
   loop: "{{ channel_add_results.results | default([]) }}"
   when: channels | length > 0 and item.stdout is defined
 
+- name: Install openclaw daemon
+  ansible.builtin.shell:
+    cmd: "{{ clawdbot_home }}/.local/bin/openclaw daemon install 2>&1"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  environment:
+    ANTHROPIC_API_KEY: "{{ anthropic_api_key }}"
+    OPENAI_API_KEY: "{{ openai_api_key }}"
+    GEMINI_API_KEY: "{{ gemini_api_key }}"
+    TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
+    PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+    HOME: "{{ clawdbot_home }}"
+  when: has_any_api_key | bool
+  register: daemon_install_result
+  failed_when: false
+
+- name: Display daemon install output
+  ansible.builtin.debug:
+    msg: "{{ daemon_install_result.stdout | default('no output') }}"
+  when: has_any_api_key | bool
+
+- name: Start openclaw daemon
+  ansible.builtin.shell:
+    cmd: "{{ clawdbot_home }}/.local/bin/openclaw daemon start 2>&1"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  environment:
+    ANTHROPIC_API_KEY: "{{ anthropic_api_key }}"
+    OPENAI_API_KEY: "{{ openai_api_key }}"
+    GEMINI_API_KEY: "{{ gemini_api_key }}"
+    TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
+    PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+    HOME: "{{ clawdbot_home }}"
+  when: has_any_api_key | bool
+  register: daemon_start_result
+  failed_when: false
+
+- name: Display daemon start output
+  ansible.builtin.debug:
+    msg: "{{ daemon_start_result.stdout | default('no output') }}"
+  when: has_any_api_key | bool
+
 - name: Display configuration note
   ansible.builtin.debug:
     msg: |
