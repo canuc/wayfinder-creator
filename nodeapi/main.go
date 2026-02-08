@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
@@ -29,8 +30,22 @@ func main() {
 	mux.HandleFunc("POST /pairing/deny", requireAuth(pubKey, handlePairingDeny))
 	mux.HandleFunc("GET /channels/status", requireAuth(pubKey, handleChannelsStatus))
 
+	// 10 requests/sec per IP, burst of 20
+	limiter := newIPLimiter(10, 20)
+	handler := rateLimitMiddleware(limiter, mux)
+
+	srv := &http.Server{
+		Addr:              *listen,
+		Handler:           handler,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 14, // 16 KB
+	}
+
 	log.Printf("starting node API on %s", *listen)
-	if err := http.ListenAndServe(*listen, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

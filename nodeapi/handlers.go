@@ -1,15 +1,25 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 const openclawBin = "/home/clawdbot/.local/bin/openclaw"
+
+const maxBodyBytes = 4096 // 4 KB — plenty for JSON action requests
+
+const maxConcurrentCLI = 4
+
+var cliSem = make(chan struct{}, maxConcurrentCLI)
+
+const cliTimeout = 30 * time.Second
 
 var cmdEnv = []string{
 	"HOME=/home/clawdbot",
@@ -23,7 +33,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleChannelsStatus(w http.ResponseWriter, r *http.Request) {
-	out, err := runCLI("channels", "status", "--json")
+	out, err := runCLI(r.Context(), "channels", "status", "--json")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("channels status failed: %v", err))
 		return
@@ -33,8 +43,7 @@ func handleChannelsStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePairingRequests(w http.ResponseWriter, r *http.Request) {
-	// Get channels list
-	channelsOut, err := runCLI("channels", "status", "--json")
+	channelsOut, err := runCLI(r.Context(), "channels", "status", "--json")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("channels status failed: %v", err))
 		return
@@ -64,7 +73,7 @@ func handlePairingRequests(w http.ResponseWriter, r *http.Request) {
 		if chName == "" {
 			chName = "default"
 		}
-		out, err := runCLI("pairing", "list", chName, "--json")
+		out, err := runCLI(r.Context(), "pairing", "list", chName, "--json")
 		if err != nil {
 			log.Printf("pairing list for %s failed: %v", chName, err)
 			continue
@@ -89,6 +98,7 @@ func handlePairingRequests(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePairingApprove(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req struct {
 		Channel string `json:"channel"`
 		ID      string `json:"id"`
@@ -98,7 +108,7 @@ func handlePairingApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := runCLI("pairing", "approve", req.Channel, req.ID)
+	out, err := runCLI(r.Context(), "pairing", "approve", req.Channel, req.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("approve failed: %v: %s", err, string(out)))
 		return
@@ -109,6 +119,7 @@ func handlePairingApprove(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePairingDeny(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req struct {
 		Channel string `json:"channel"`
 		ID      string `json:"id"`
@@ -118,7 +129,7 @@ func handlePairingDeny(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := runCLI("pairing", "deny", req.Channel, req.ID)
+	out, err := runCLI(r.Context(), "pairing", "deny", req.Channel, req.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("deny failed: %v: %s", err, string(out)))
 		return
@@ -128,15 +139,26 @@ func handlePairingDeny(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "denied"})
 }
 
-func runCLI(args ...string) ([]byte, error) {
-	// Sanitize args: reject anything that looks like shell injection
+func runCLI(ctx context.Context, args ...string) ([]byte, error) {
+	// Sanitize args
 	for _, arg := range args {
 		if strings.ContainsAny(arg, ";|&`$(){}[]\\'\"\n\r") {
 			return nil, fmt.Errorf("invalid argument: %q", arg)
 		}
 	}
 
-	cmd := exec.Command(openclawBin, args...)
+	// Acquire semaphore slot (bounded concurrency)
+	select {
+	case cliSem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("request cancelled waiting for CLI slot")
+	}
+	defer func() { <-cliSem }()
+
+	ctx, cancel := context.WithTimeout(ctx, cliTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, openclawBin, args...)
 	cmd.Env = cmdEnv
 	out, err := cmd.CombinedOutput()
 	if err != nil {
