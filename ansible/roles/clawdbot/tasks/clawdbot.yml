@@ -357,6 +357,8 @@
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ clawdbot_uid_value }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ clawdbot_uid_value }}/bus"
   register: daemon_install_result
   failed_when: false
 
@@ -379,6 +381,8 @@
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ clawdbot_uid_value }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ clawdbot_uid_value }}/bus"
   register: gateway_install_result
   failed_when: false
 
@@ -421,6 +425,8 @@
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ clawdbot_uid_value }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ clawdbot_uid_value }}/bus"
   register: daemon_start_result
   failed_when: false
 
@@ -443,6 +449,8 @@
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ clawdbot_uid_value }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ clawdbot_uid_value }}/bus"
   register: gateway_start_result
   failed_when: false
 

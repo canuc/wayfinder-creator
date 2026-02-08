@@ -223,6 +223,7 @@
         PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
         HOME: "{{ clawdbot_home }}"
         XDG_RUNTIME_DIR: "/run/user/{{ clawdbot_uid_value }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ clawdbot_uid_value }}/bus"
       register: post_reboot_daemon_result
       failed_when: false
 
@@ -246,6 +247,7 @@
         PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
         HOME: "{{ clawdbot_home }}"
         XDG_RUNTIME_DIR: "/run/user/{{ clawdbot_uid_value }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ clawdbot_uid_value }}/bus"
       register: post_reboot_gateway_result
       failed_when: false
 
