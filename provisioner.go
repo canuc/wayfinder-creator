@@ -110,7 +110,7 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts, logFn func(string)) (*Prov
 	}
 	inventoryFile.Close()
 
-	slog.Info("inventory written", "ip", opts.IP, "file", inventoryFile.Name(), "content", inventoryContent)
+	slog.Info("inventory written", "ip", opts.IP, "file", inventoryFile.Name())
 
 	args := []string{"-i", inventoryFile.Name(), "playbook.yml", "-vv"}
 
@@ -118,11 +118,14 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts, logFn func(string)) (*Prov
 	extraVars := p.buildExtraVars(opts)
 	if extraVars != "" {
 		args = append(args, "--extra-vars", extraVars)
-		slog.Info("extra vars configured", "ip", opts.IP, "extra_vars", extraVars)
+		slog.Info("extra vars configured", "ip", opts.IP)
 	}
 
-	slog.Info("launching ansible-playbook", "ip", opts.IP, "args", strings.Join(args, " "), "cwd", p.ansibleDir)
-	logFn("Running: ansible-playbook " + strings.Join(args, " "))
+	// Collect secret values to redact from output
+	secrets := collectSecrets(opts)
+
+	slog.Info("launching ansible-playbook", "ip", opts.IP, "cwd", p.ansibleDir)
+	logFn("Running: ansible-playbook playbook.yml")
 
 	cmd := exec.Command("ansible-playbook", args...)
 	cmd.Dir = p.ansibleDir
@@ -151,8 +154,9 @@ func (p *Provisioner) RunPlaybook(opts ProvisionOpts, logFn func(string)) (*Prov
 			// Log each line for real-time visibility
 			for _, line := range strings.Split(strings.TrimRight(chunk, "\n"), "\n") {
 				if line != "" {
-					slog.Info("ansible", "ip", opts.IP, "out", line)
-					logFn(line)
+					redacted := redactLine(line, secrets)
+					slog.Info("ansible", "ip", opts.IP, "out", redacted)
+					logFn(redacted)
 				}
 			}
 			lastLogTime = time.Now()
@@ -247,6 +251,53 @@ func parseWalletAddress(output string) string {
 		}
 	}
 	return ""
+}
+
+func (p *Provisioner) CheckSSH(ip string, logFn func(string)) error {
+	addr := net.JoinHostPort(ip, "22")
+	logFn("Checking SSH connectivity on " + addr + "...")
+	for attempt := range 5 {
+		conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+		if err == nil {
+			conn.Close()
+			logFn(fmt.Sprintf("SSH is ready (attempt %d)", attempt+1))
+			return nil
+		}
+		logFn(fmt.Sprintf("SSH attempt %d/5 failed: %v", attempt+1, err))
+		if attempt < 4 {
+			time.Sleep(5 * time.Second)
+		}
+	}
+	return fmt.Errorf("SSH not reachable after 5 attempts at %s", addr)
+}
+
+func collectSecrets(opts ProvisionOpts) []string {
+	var secrets []string
+	for _, s := range []string{
+		opts.AnthropicAPIKey,
+		opts.OpenAIAPIKey,
+		opts.GeminiAPIKey,
+		opts.WayfinderAPIKey,
+	} {
+		if len(s) > 3 {
+			secrets = append(secrets, s)
+		}
+	}
+	for _, ch := range opts.Channels {
+		if len(ch.Token) > 3 {
+			secrets = append(secrets, ch.Token)
+		}
+	}
+	return secrets
+}
+
+func redactLine(line string, secrets []string) string {
+	for _, s := range secrets {
+		if strings.Contains(line, s) {
+			line = strings.ReplaceAll(line, s, s[:3]+"***")
+		}
+	}
+	return line
 }
 
 func expandHome(path string) string {

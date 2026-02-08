@@ -1,0 +1,219 @@
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+)
+
+type Store struct {
+	db *sql.DB
+}
+
+func NewStore(databaseURL string) (*Store, error) {
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	db.SetMaxOpenConns(5)
+	db.SetMaxIdleConns(2)
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("ping database: %w", err)
+	}
+	return &Store{db: db}, nil
+}
+
+func (s *Store) Migrate() error {
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS servers (
+			id BIGINT PRIMARY KEY,
+			name TEXT NOT NULL,
+			ipv4 TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'provisioning',
+			provisioned BOOLEAN NOT NULL DEFAULT false,
+			wallet_address TEXT NOT NULL DEFAULT '',
+			default_key_removed BOOLEAN NOT NULL DEFAULT false,
+			ssh_public_key TEXT NOT NULL DEFAULT '',
+			anthropic_api_key TEXT NOT NULL DEFAULT '',
+			openai_api_key TEXT NOT NULL DEFAULT '',
+			gemini_api_key TEXT NOT NULL DEFAULT '',
+			wayfinder_api_key TEXT NOT NULL DEFAULT '',
+			channels JSONB NOT NULL DEFAULT '[]',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
+		CREATE TABLE IF NOT EXISTS server_logs (
+			id BIGSERIAL PRIMARY KEY,
+			server_id BIGINT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+			line TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
+		CREATE INDEX IF NOT EXISTS idx_server_logs_server_id ON server_logs(server_id);
+	`)
+	return err
+}
+
+func (s *Store) FailStaleProvisioningServers() {
+	result, err := s.db.Exec(`UPDATE servers SET status='failed' WHERE status='provisioning'`)
+	if err != nil {
+		slog.Error("failed to mark stale servers as failed", "error", err)
+		return
+	}
+	n, _ := result.RowsAffected()
+	if n > 0 {
+		slog.Info("marked stale provisioning servers as failed", "count", n)
+		// Insert a log line for each affected server
+		s.db.Exec(`
+			INSERT INTO server_logs (server_id, line)
+			SELECT id, 'Provisioning interrupted by server restart'
+			FROM servers WHERE status='failed' AND id NOT IN (
+				SELECT DISTINCT server_id FROM server_logs WHERE line='Provisioning interrupted by server restart'
+			)
+		`)
+	}
+}
+
+func (s *Store) CreateServer(info *ServerInfo, opts ProvisionOpts) error {
+	channelsJSON, err := json.Marshal(opts.Channels)
+	if err != nil {
+		channelsJSON = []byte("[]")
+	}
+	_, err = s.db.Exec(`
+		INSERT INTO servers (id, name, ipv4, status, provisioned, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, info.ID, info.Name, info.IPv4, info.Status, info.Provisioned,
+		opts.SSHPublicKey, opts.AnthropicAPIKey, opts.OpenAIAPIKey, opts.GeminiAPIKey, opts.WayfinderAPIKey, channelsJSON)
+	return err
+}
+
+func (s *Store) GetServer(id int64) (*ServerInfo, error) {
+	var info ServerInfo
+	err := s.db.QueryRow(`
+		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed
+		FROM servers WHERE id=$1
+	`, id).Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned, &info.WalletAddress, &info.DefaultKeyRemoved)
+	if err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+func (s *Store) ListServers() ([]*ServerInfo, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed
+		FROM servers ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var servers []*ServerInfo
+	for rows.Next() {
+		var info ServerInfo
+		if err := rows.Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned, &info.WalletAddress, &info.DefaultKeyRemoved); err != nil {
+			return nil, err
+		}
+		servers = append(servers, &info)
+	}
+	return servers, rows.Err()
+}
+
+func (s *Store) UpdateStatus(id int64, status string, provisioned bool) {
+	_, err := s.db.Exec(`UPDATE servers SET status=$1, provisioned=$2 WHERE id=$3`, status, provisioned, id)
+	if err != nil {
+		slog.Error("failed to update server status", "server_id", id, "error", err)
+	}
+}
+
+func (s *Store) SetWalletAddress(id int64, addr string) {
+	_, err := s.db.Exec(`UPDATE servers SET wallet_address=$1 WHERE id=$2`, addr, id)
+	if err != nil {
+		slog.Error("failed to set wallet address", "server_id", id, "error", err)
+	}
+}
+
+func (s *Store) SetDefaultKeyRemoved(id int64, removed bool) {
+	_, err := s.db.Exec(`UPDATE servers SET default_key_removed=$1 WHERE id=$2`, removed, id)
+	if err != nil {
+		slog.Error("failed to set default_key_removed", "server_id", id, "error", err)
+	}
+}
+
+func (s *Store) AppendLog(id int64, line string) error {
+	_, err := s.db.Exec(`INSERT INTO server_logs (server_id, line) VALUES ($1, $2)`, id, line)
+	if err != nil {
+		slog.Error("failed to append log", "server_id", id, "error", err)
+	}
+	return err
+}
+
+func (s *Store) GetLogsSince(serverID, afterID int64) ([]LogEntry, error) {
+	rows, err := s.db.Query(`
+		SELECT id, line FROM server_logs
+		WHERE server_id=$1 AND id>$2
+		ORDER BY id
+	`, serverID, afterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []LogEntry
+	for rows.Next() {
+		var entry LogEntry
+		if err := rows.Scan(&entry.ID, &entry.Line); err != nil {
+			return nil, err
+		}
+		logs = append(logs, entry)
+	}
+	return logs, rows.Err()
+}
+
+func (s *Store) ClearLogs(id int64) {
+	_, err := s.db.Exec(`DELETE FROM server_logs WHERE server_id=$1`, id)
+	if err != nil {
+		slog.Error("failed to clear logs", "server_id", id, "error", err)
+	}
+}
+
+func (s *Store) DeleteServer(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM servers WHERE id=$1`, id)
+	return err
+}
+
+func (s *Store) GetProvisionOpts(id int64) (*ProvisionOpts, error) {
+	var opts ProvisionOpts
+	var channelsJSON []byte
+	var ip string
+	err := s.db.QueryRow(`
+		SELECT ipv4, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels
+		FROM servers WHERE id=$1
+	`, id).Scan(&ip, &opts.SSHPublicKey, &opts.AnthropicAPIKey, &opts.OpenAIAPIKey, &opts.GeminiAPIKey, &opts.WayfinderAPIKey, &channelsJSON)
+	if err != nil {
+		return nil, err
+	}
+	opts.IP = ip
+	if len(channelsJSON) > 0 {
+		json.Unmarshal(channelsJSON, &opts.Channels)
+	}
+	return &opts, nil
+}
+
+func (s *Store) ResetForReprovision(id int64) error {
+	result, err := s.db.Exec(`
+		UPDATE servers SET status='provisioning', provisioned=false
+		WHERE id=$1 AND status='failed' AND default_key_removed=false
+	`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("server %d is not eligible for re-provisioning", id)
+	}
+	s.ClearLogs(id)
+	return nil
+}

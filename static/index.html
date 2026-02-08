@@ -263,6 +263,28 @@
     background: var(--red-muted);
   }
 
+  .btn-warn {
+    background: transparent;
+    color: var(--yellow);
+    border: 1px solid var(--yellow);
+    font-family: var(--sans);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.45rem 1rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-warn:hover:not(:disabled) {
+    background: var(--yellow-muted);
+  }
+
+  .btn-warn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .actions {
     margin-top: 1.25rem;
     display: flex;
@@ -516,6 +538,9 @@
     margin-top: 0.75rem;
     font-size: 0.75rem;
     color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
   }
 
   /* Clickable server name in table */
@@ -646,8 +671,7 @@
 
   const API = '';
   let polling = null;
-  let logPolling = null;
-  let logOffset = 0;
+  let logWs = null;
   let currentLogServerId = null;
 
   // Toggle password visibility
@@ -857,22 +881,25 @@
     return d.innerHTML;
   }
 
-  // Log viewer
+  // Log viewer (WebSocket)
   function showLogView(serverId, name, ip) {
     currentLogServerId = serverId;
-    logOffset = 0;
     document.getElementById('main-view').classList.add('hidden');
     document.getElementById('log-view').classList.add('active');
     document.getElementById('log-server-name').textContent = name;
     document.getElementById('log-server-ip').textContent = ip;
     document.getElementById('log-terminal').textContent = '';
     document.getElementById('log-done-msg').textContent = '';
+    document.getElementById('log-done-msg').innerHTML = '';
     document.getElementById('log-status-pill').innerHTML = '';
-    startLogPolling(serverId);
+    connectWebSocket(serverId);
   }
 
   function hideLogView() {
-    stopLogPolling();
+    if (logWs) {
+      logWs.close();
+      logWs = null;
+    }
     currentLogServerId = null;
     document.getElementById('log-view').classList.remove('active');
     document.getElementById('main-view').classList.remove('hidden');
@@ -881,37 +908,90 @@
 
   document.getElementById('log-back-btn').addEventListener('click', hideLogView);
 
-  function startLogPolling(serverId) {
-    stopLogPolling();
-    pollLogs(serverId);
-    logPolling = setInterval(() => pollLogs(serverId), 1000);
-  }
+  function connectWebSocket(serverId) {
+    if (logWs) {
+      logWs.close();
+      logWs = null;
+    }
 
-  function stopLogPolling() {
-    if (logPolling) { clearInterval(logPolling); logPolling = null; }
-  }
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = proto + '//' + location.host + '/servers/' + serverId + '/ws';
+    const ws = new WebSocket(url);
+    logWs = ws;
 
-  async function pollLogs(serverId) {
-    try {
-      const res = await fetch(API + '/servers/' + serverId + '/logs?offset=' + logOffset);
-      if (!res.ok) return;
-      const data = await res.json();
-      const terminal = document.getElementById('log-terminal');
-      if (data.lines && data.lines.length > 0) {
-        for (const line of data.lines) {
-          terminal.textContent += line + '\n';
-        }
+    ws.onmessage = function (evt) {
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch (_) { return; }
+
+      if (msg.type === 'init') {
+        const srv = msg.server;
+        document.getElementById('log-server-name').textContent = srv.name;
+        document.getElementById('log-server-ip').textContent = srv.ipv4;
+        updateLogStatusPill(srv.status);
+      } else if (msg.type === 'log') {
+        const terminal = document.getElementById('log-terminal');
+        terminal.textContent += msg.line + '\n';
         terminal.scrollTop = terminal.scrollHeight;
-        logOffset = data.offset;
+      } else if (msg.type === 'status') {
+        updateLogStatusPill(msg.status);
+        const doneEl = document.getElementById('log-done-msg');
+        if (msg.status === 'ready') {
+          doneEl.innerHTML = '<span>Provisioning complete.</span>';
+        } else if (msg.status === 'failed') {
+          let html = '<span>Provisioning failed.</span>';
+          if (!msg.default_key_removed) {
+            html += ' <button class="btn-warn" id="reprovision-btn">Re-provision</button>';
+          }
+          doneEl.innerHTML = html;
+          const btn = document.getElementById('reprovision-btn');
+          if (btn) {
+            btn.addEventListener('click', function () {
+              reprovisionServer(serverId);
+            });
+          }
+        }
       }
-      // Update status pill
-      updateLogStatusPill(data.status);
-      if (data.done) {
-        stopLogPolling();
-        const msg = data.status === 'ready' ? 'Provisioning complete.' : 'Provisioning failed.';
-        document.getElementById('log-done-msg').textContent = msg;
+    };
+
+    ws.onclose = function () {
+      if (logWs === ws) {
+        const terminal = document.getElementById('log-terminal');
+        terminal.textContent += '\n[disconnected]\n';
       }
-    } catch (_) {}
+    };
+
+    ws.onerror = function () {
+      if (logWs === ws) {
+        const terminal = document.getElementById('log-terminal');
+        terminal.textContent += '\n[connection error]\n';
+      }
+    };
+  }
+
+  async function reprovisionServer(serverId) {
+    const btn = document.getElementById('reprovision-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Re-provisioning...';
+    }
+
+    try {
+      const res = await fetch(API + '/servers/' + serverId + '/reprovision', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        alert('Re-provision failed: ' + (data.error || res.statusText));
+        if (btn) { btn.disabled = false; btn.textContent = 'Re-provision'; }
+        return;
+      }
+      // Clear terminal and reconnect WS
+      document.getElementById('log-terminal').textContent = '';
+      document.getElementById('log-done-msg').innerHTML = '';
+      updateLogStatusPill('provisioning');
+      connectWebSocket(serverId);
+    } catch (err) {
+      alert('Network error: ' + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Re-provision'; }
+    }
   }
 
   function updateLogStatusPill(status) {

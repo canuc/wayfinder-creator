@@ -207,6 +207,29 @@
       ansible.builtin.debug:
         msg: "✅ Server rebooted successfully. Uptime: {{ reboot_result.elapsed }} seconds since reboot initiated."
 
+    - name: Start openclaw daemon after reboot
+      ansible.builtin.shell:
+        cmd: "{{ clawdbot_home }}/.local/bin/openclaw daemon start 2>&1"
+        executable: /bin/bash
+      become: true
+      become_user: "{{ clawdbot_user }}"
+      environment:
+        ANTHROPIC_API_KEY: "{{ anthropic_api_key }}"
+        OPENAI_API_KEY: "{{ openai_api_key }}"
+        GEMINI_API_KEY: "{{ gemini_api_key }}"
+        TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+        DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+        PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
+        PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+        HOME: "{{ clawdbot_home }}"
+        XDG_RUNTIME_DIR: "/run/user/{{ clawdbot_uid_value }}"
+      register: post_reboot_daemon_result
+      failed_when: false
+
+    - name: Display post-reboot daemon start output
+      ansible.builtin.debug:
+        msg: "{{ post_reboot_daemon_result.stdout | default('no output') }}"
+
     - name: Remove Hetzner provisioning key, keep only user key
       ansible.builtin.authorized_key:
         user: root

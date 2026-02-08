@@ -3,5 +3,4 @@
 **/*.exe
 **/.env
 **/test.sh
-**/ansible/roles
 fly.toml

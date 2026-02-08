@@ -20,6 +20,7 @@ type Config struct {
 	SSHPrivateKeyData string
 	APIUsername       string
 	APIPassword       string
+	DatabaseURL       string
 }
 
 func LoadConfig() (*Config, error) {
@@ -49,6 +50,11 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("API_PASSWORD is required")
 	}
 
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+
 	return &Config{
 		HCloudToken:       token,
 		SSHKeyID:          sshKeyID,
@@ -61,6 +67,7 @@ func LoadConfig() (*Config, error) {
 		SSHPrivateKeyData: os.Getenv("SSH_PRIVATE_KEY_DATA"),
 		APIUsername:       apiUser,
 		APIPassword:       apiPass,
+		DatabaseURL:       dbURL,
 	}, nil
 }
 
