@@ -501,6 +501,14 @@ func (s *Server) proxyToNode(w http.ResponseWriter, r *http.Request, serverID in
 	defer resp.Body.Close()
 
 	// Forward response
+	if resp.StatusCode >= 400 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		slog.Warn("node returned error", "server_id", serverID, "path", path, "status", resp.StatusCode, "body", string(bodyBytes))
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		w.WriteHeader(resp.StatusCode)
+		w.Write(bodyBytes)
+		return
+	}
 	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)

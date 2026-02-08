@@ -49,44 +49,55 @@ func handlePairingRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var channels []struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
+	var channelsStatus struct {
+		ChannelOrder []string `json:"channelOrder"`
 	}
-	if err := json.Unmarshal(channelsOut, &channels); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to parse channels")
+	if err := json.Unmarshal(channelsOut, &channelsStatus); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to parse channels: %v", err))
 		return
 	}
 
 	type pairingRequest struct {
-		ID        string `json:"id"`
-		Channel   string `json:"channel"`
-		User      string `json:"user"`
-		Status    string `json:"status"`
-		CreatedAt string `json:"created_at"`
+		ID        string          `json:"id"`
+		Channel   string          `json:"channel"`
+		Code      string          `json:"code,omitempty"`
+		CreatedAt string          `json:"created_at"`
+		LastSeenAt string         `json:"last_seen_at,omitempty"`
+		Meta      json.RawMessage `json:"meta,omitempty"`
 	}
 
 	var allRequests []pairingRequest
 
-	for _, ch := range channels {
-		chName := ch.Name
-		if chName == "" {
-			chName = "default"
-		}
+	for _, chName := range channelsStatus.ChannelOrder {
 		out, err := runCLI(r.Context(), "pairing", "list", chName, "--json")
 		if err != nil {
 			log.Printf("pairing list for %s failed: %v", chName, err)
 			continue
 		}
-		var requests []pairingRequest
-		if err := json.Unmarshal(out, &requests); err != nil {
+		var pairingResp struct {
+			Channel  string `json:"channel"`
+			Requests []struct {
+				ID         string          `json:"id"`
+				Code       string          `json:"code"`
+				CreatedAt  string          `json:"createdAt"`
+				LastSeenAt string          `json:"lastSeenAt"`
+				Meta       json.RawMessage `json:"meta"`
+			} `json:"requests"`
+		}
+		if err := json.Unmarshal(out, &pairingResp); err != nil {
 			log.Printf("failed to parse pairing list for %s: %v", chName, err)
 			continue
 		}
-		for i := range requests {
-			requests[i].Channel = chName
+		for _, req := range pairingResp.Requests {
+			allRequests = append(allRequests, pairingRequest{
+				ID:         req.ID,
+				Channel:    chName,
+				Code:       req.Code,
+				CreatedAt:  req.CreatedAt,
+				LastSeenAt: req.LastSeenAt,
+				Meta:       req.Meta,
+			})
 		}
-		allRequests = append(allRequests, requests...)
 	}
 
 	if allRequests == nil {
