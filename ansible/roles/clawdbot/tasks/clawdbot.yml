@@ -364,9 +364,34 @@
   ansible.builtin.debug:
     msg: "{{ daemon_install_result.stdout | default('no output') }}"
 
-- name: Enable openclaw daemon to start on boot
+- name: Install openclaw gateway
   ansible.builtin.shell:
-    cmd: "systemctl --user enable openclaw-gateway.service 2>&1 || systemctl --user enable clawdbot.service 2>&1 || true"
+    cmd: "{{ clawdbot_home }}/.local/bin/openclaw gateway install 2>&1"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  environment:
+    ANTHROPIC_API_KEY: "{{ anthropic_api_key }}"
+    OPENAI_API_KEY: "{{ openai_api_key }}"
+    GEMINI_API_KEY: "{{ gemini_api_key }}"
+    TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
+    PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+    HOME: "{{ clawdbot_home }}"
+  register: gateway_install_result
+  failed_when: false
+
+- name: Display gateway install output
+  ansible.builtin.debug:
+    msg: "{{ gateway_install_result.stdout | default('no output') }}"
+
+- name: Enable openclaw services to start on boot
+  ansible.builtin.shell:
+    cmd: |
+      systemctl --user enable openclaw-gateway.service 2>&1 || true
+      systemctl --user enable openclaw-daemon.service 2>&1 || true
+      systemctl --user enable clawdbot.service 2>&1 || true
     executable: /bin/bash
   become: true
   become_user: "{{ clawdbot_user }}"
@@ -402,6 +427,28 @@
 - name: Display daemon start output
   ansible.builtin.debug:
     msg: "{{ daemon_start_result.stdout | default('no output') }}"
+
+- name: Start openclaw gateway
+  ansible.builtin.shell:
+    cmd: "{{ clawdbot_home }}/.local/bin/openclaw gateway start 2>&1"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  environment:
+    ANTHROPIC_API_KEY: "{{ anthropic_api_key }}"
+    OPENAI_API_KEY: "{{ openai_api_key }}"
+    GEMINI_API_KEY: "{{ gemini_api_key }}"
+    TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
+    PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+    HOME: "{{ clawdbot_home }}"
+  register: gateway_start_result
+  failed_when: false
+
+- name: Display gateway start output
+  ansible.builtin.debug:
+    msg: "{{ gateway_start_result.stdout | default('no output') }}"
 
 - name: Display configuration note
   ansible.builtin.debug:
