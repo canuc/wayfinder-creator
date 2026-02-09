@@ -1,8 +1,10 @@
 export interface ServerInfo {
   id: number
+  provider_id?: string
   name: string
   status: 'provisioning' | 'ready' | 'failed'
   ipv4: string
+  provider: string
   provisioned: boolean
   wallet_address?: string
   default_key_removed: boolean
@@ -20,6 +22,7 @@ export interface ChannelConfig {
 
 export interface CreateServerRequest {
   name?: string
+  provider?: string
   ssh_public_key?: string
   anthropic_api_key?: string
   openai_api_key?: string
@@ -31,9 +34,11 @@ export interface CreateServerRequest {
 
 export interface CreateServerResponse {
   id: number
+  provider_id?: string
   name: string
   status: string
   ipv4: string
+  provider: string
 }
 
 export interface LogEntry {

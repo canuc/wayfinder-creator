@@ -11,6 +11,7 @@ type ChannelConfig struct {
 
 type CreateServerRequest struct {
 	Name            string          `json:"name"`
+	Provider        string          `json:"provider,omitempty"`
 	SSHPublicKey    string          `json:"ssh_public_key,omitempty"`
 	AnthropicAPIKey string          `json:"anthropic_api_key,omitempty"`
 	OpenAIAPIKey    string          `json:"openai_api_key,omitempty"`
@@ -21,10 +22,11 @@ type CreateServerRequest struct {
 }
 
 type CreateServerResponse struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	IPv4   string `json:"ipv4"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	IPv4     string `json:"ipv4"`
+	Provider string `json:"provider"`
 }
 
 type ServerStatusResponse struct {
@@ -32,6 +34,7 @@ type ServerStatusResponse struct {
 	Name              string `json:"name"`
 	Status            string `json:"status"`
 	IPv4              string `json:"ipv4"`
+	Provider          string `json:"provider"`
 	Provisioned       bool   `json:"provisioned"`
 	WalletAddress     string `json:"wallet_address,omitempty"`
 	DefaultKeyRemoved bool   `json:"default_key_removed"`
@@ -50,9 +53,11 @@ type ErrorResponse struct {
 
 type ServerInfo struct {
 	ID                int64
+	ProviderID        string
 	Name              string
 	IPv4              string
 	Status            string // "provisioning", "ready", "failed"
+	Provider          string
 	Provisioned       bool
 	WalletAddress     string
 	DefaultKeyRemoved bool

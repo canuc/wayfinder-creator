@@ -21,7 +21,7 @@ var staticFS embed.FS
 
 type Server struct {
 	config      *Config
-	hetzner     *HetznerClient
+	providers   map[string]VPSProvider
 	provisioner *Provisioner
 	store       *Store
 	hub         *LogHub
@@ -29,10 +29,10 @@ type Server struct {
 	upgrader    websocket.Upgrader
 }
 
-func NewServer(cfg *Config, hetzner *HetznerClient, provisioner *Provisioner, store *Store, hub *LogHub) *Server {
+func NewServer(cfg *Config, providers map[string]VPSProvider, provisioner *Provisioner, store *Store, hub *LogHub) *Server {
 	return &Server{
 		config:      cfg,
-		hetzner:     hetzner,
+		providers:   providers,
 		provisioner: provisioner,
 		store:       store,
 		hub:         hub,
@@ -91,13 +91,28 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" {
 		req.Name = randomName()
 	}
+	if req.Provider == "" {
+		// Default to first available provider
+		for name := range s.providers {
+			req.Provider = name
+			break
+		}
+	}
 
-	info, err := s.hetzner.CreateServer(r.Context(), req.Name)
+	provider, ok := s.providers[req.Provider]
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: fmt.Sprintf("unsupported provider: %s", req.Provider)})
+		return
+	}
+
+	info, err := provider.CreateServer(r.Context(), req.Name)
 	if err != nil {
 		slog.Error("failed to create server", "error", err)
 		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
+
+	info.Provider = req.Provider
 
 	opts := ProvisionOpts{
 		IP:               info.IPv4,
@@ -125,10 +140,11 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 	go s.runProvision(info.ID, opts, logFn)
 
 	writeJSON(w, http.StatusAccepted, CreateServerResponse{
-		ID:     info.ID,
-		Name:   info.Name,
-		Status: info.Status,
-		IPv4:   info.IPv4,
+		ID:       info.ID,
+		Name:     info.Name,
+		Status:   info.Status,
+		IPv4:     info.IPv4,
+		Provider: info.Provider,
 	})
 }
 
@@ -191,6 +207,7 @@ func (s *Server) handleGetServer(w http.ResponseWriter, r *http.Request) {
 		Name:              info.Name,
 		Status:            info.Status,
 		IPv4:              info.IPv4,
+		Provider:          info.Provider,
 		Provisioned:       info.Provisioned,
 		WalletAddress:     info.WalletAddress,
 		DefaultKeyRemoved: info.DefaultKeyRemoved,
@@ -205,14 +222,25 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Look up provider before deleting from DB
+	info, err := s.store.GetServer(id, user.ID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "server not found"})
+		return
+	}
+
 	if err := s.store.DeleteServer(id, user.ID); err != nil {
 		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "server not found"})
 		return
 	}
 
-	if err := s.hetzner.DeleteServer(r.Context(), id); err != nil {
-		slog.Error("failed to delete server from hetzner", "error", err)
-		// Server already deleted from DB, log the error but don't fail
+	if provider, ok := s.providers[info.Provider]; ok {
+		if err := provider.DeleteServer(r.Context(), info.ProviderID); err != nil {
+			slog.Error("failed to delete server from provider", "provider", info.Provider, "error", err)
+			// Server already deleted from DB, log the error but don't fail
+		}
+	} else {
+		slog.Error("unknown provider for server deletion", "provider", info.Provider, "server_id", id)
 	}
 
 	s.hub.Remove(id)
@@ -233,9 +261,11 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 	}
 	type item struct {
 		ID                int64  `json:"id"`
+		ProviderID        string `json:"provider_id"`
 		Name              string `json:"name"`
 		Status            string `json:"status"`
 		IPv4              string `json:"ipv4"`
+		Provider          string `json:"provider"`
 		Provisioned       bool   `json:"provisioned"`
 		WalletAddress     string `json:"wallet_address,omitempty"`
 		DefaultKeyRemoved bool   `json:"default_key_removed"`
@@ -247,9 +277,11 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 	for i, info := range servers {
 		out[i] = item{
 			ID:                info.ID,
+			ProviderID:        info.ProviderID,
 			Name:              info.Name,
 			Status:            info.Status,
 			IPv4:              info.IPv4,
+			Provider:          info.Provider,
 			Provisioned:       info.Provisioned,
 			WalletAddress:     info.WalletAddress,
 			DefaultKeyRemoved: info.DefaultKeyRemoved,
@@ -492,8 +524,13 @@ func (s *Server) proxyToNode(w http.ResponseWriter, r *http.Request, serverID in
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
+	providers := make([]string, 0, len(s.providers))
+	for name := range s.providers {
+		providers = append(providers, name)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
 		"walletconnect_project_id": s.config.WalletConnectProjectID,
+		"providers":                providers,
 	})
 }
 

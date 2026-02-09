@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
@@ -19,6 +20,8 @@ func NewHetznerClient(cfg *Config) *HetznerClient {
 		cfg:    cfg,
 	}
 }
+
+func (h *HetznerClient) Name() string { return "hetzner" }
 
 func (h *HetznerClient) CreateServer(ctx context.Context, name string) (*ServerInfo, error) {
 	slog.Info("creating server", "name", name, "type", h.cfg.ServerType, "image", h.cfg.Image, "location", h.cfg.Location)
@@ -61,22 +64,27 @@ func (h *HetznerClient) CreateServer(ctx context.Context, name string) (*ServerI
 	slog.Info("server created", "id", server.ID, "name", server.Name, "ipv4", ipv4)
 
 	return &ServerInfo{
-		ID:     server.ID,
-		Name:   server.Name,
-		IPv4:   ipv4,
-		Status: "provisioning",
+		ProviderID: strconv.FormatInt(server.ID, 10),
+		Name:       server.Name,
+		IPv4:       ipv4,
+		Status:     "provisioning",
 	}, nil
 }
 
-func (h *HetznerClient) DeleteServer(ctx context.Context, id int64) error {
-	slog.Info("deleting server", "id", id)
+func (h *HetznerClient) DeleteServer(ctx context.Context, providerID string) error {
+	id, err := strconv.ParseInt(providerID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid hetzner server id %q: %w", providerID, err)
+	}
+
+	slog.Info("deleting server", "provider_id", providerID)
 
 	server := &hcloud.Server{ID: id}
-	_, _, err := h.client.Server.DeleteWithResult(ctx, server)
+	_, _, err = h.client.Server.DeleteWithResult(ctx, server)
 	if err != nil {
 		return fmt.Errorf("delete server: %w", err)
 	}
 
-	slog.Info("server deleted", "id", id)
+	slog.Info("server deleted", "provider_id", providerID)
 	return nil
 }

@@ -15,7 +15,7 @@ import '@rainbow-me/rainbowkit/styles.css'
 
 const queryClient = new QueryClient()
 
-export function App({ walletConnectProjectId }: { walletConnectProjectId: string }) {
+export function App({ walletConnectProjectId, providers }: { walletConnectProjectId: string; providers: string[] }) {
   const wagmiConfig = createWagmiConfig(walletConnectProjectId)
 
   return (
@@ -47,7 +47,7 @@ export function App({ walletConnectProjectId }: { walletConnectProjectId: string
                   path="/deploy"
                   element={
                     <AuthGuard>
-                      <Deploy />
+                      <Deploy providers={providers} />
                     </AuthGuard>
                   }
                 />

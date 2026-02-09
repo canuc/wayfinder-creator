@@ -140,7 +140,7 @@ function DeploySuccess({
   )
 }
 
-export function Deploy() {
+export function Deploy({ providers }: { providers: string[] }) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [deployedServer, setDeployedServer] = useState<CreateServerResponse | null>(null)
@@ -173,6 +173,7 @@ export function Deploy() {
         onSubmit={handleSubmit}
         onCancel={handleCancel}
         initialSSHKey={user?.ssh_public_key || undefined}
+        providers={providers}
       />
     </Layout>
   )

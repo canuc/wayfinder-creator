@@ -12,14 +12,21 @@ const PROVIDER_META: Record<string, { label: string; placeholder: string }> = {
   gemini: { label: 'Gemini API key', placeholder: 'AI...' },
 }
 
+const VPS_PROVIDER_LABELS: Record<string, string> = {
+  hetzner: 'Hetzner',
+  vultr: 'Vultr',
+}
+
 interface Props {
   onSubmit: (req: CreateServerRequest) => Promise<void>
   onCancel: () => void
   initialSSHKey?: string
+  providers: string[]
 }
 
-export function CreateServerWizard({ onSubmit, onCancel, initialSSHKey }: Props) {
+export function CreateServerWizard({ onSubmit, onCancel, initialSSHKey, providers }: Props) {
   const [name, setName] = useState('')
+  const [vpsProvider, setVpsProvider] = useState(providers[0] || 'hetzner')
 
   // SSH key state
   const [sshMode, setSSHMode] = useState<'generate' | 'own'>(initialSSHKey ? 'own' : 'generate')
@@ -86,11 +93,29 @@ export function CreateServerWizard({ onSubmit, onCancel, initialSSHKey }: Props)
 
   const steps = useMemo(
     () => [
-      // Step 1: Name
+      // Step 1: Name + VPS Provider
       {
         label: 'Name',
         content: (
           <div className="grid gap-4">
+            {providers.length > 1 && (
+              <div>
+                <label className="block font-mono text-[0.75rem] font-medium text-text-tertiary uppercase tracking-wider mb-2">
+                  vps_provider
+                </label>
+                <select
+                  value={vpsProvider}
+                  onChange={(e) => setVpsProvider(e.target.value)}
+                  className="w-full bg-bg-input border border-border rounded-md text-text font-mono text-sm px-3 py-2 focus:outline-none focus:border-accent/50 appearance-none cursor-pointer bg-[url('data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2712%27%20height=%2712%27%20fill=%27%234a4a64%27%20viewBox=%270%200%2016%2016%27%3E%3Cpath%20d=%27M8%2011L3%206h10z%27/%3E%3C/svg%3E')] bg-no-repeat bg-[right_10px_center] transition-colors"
+                >
+                  {providers.map((p) => (
+                    <option key={p} value={p}>
+                      {VPS_PROVIDER_LABELS[p] || p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block font-mono text-[0.75rem] font-medium text-text-tertiary uppercase tracking-wider mb-2">
                 server_name{' '}
@@ -358,6 +383,8 @@ export function CreateServerWizard({ onSubmit, onCancel, initialSSHKey }: Props)
             <div className="grid grid-cols-[120px_1fr] gap-y-2.5 text-xs border border-border/50 rounded-md p-3 bg-surface/30">
               <span className="font-mono text-[0.7rem] text-text-tertiary uppercase">name</span>
               <span className="text-text font-mono text-[0.8rem]">{name || '(auto)'}</span>
+              <span className="font-mono text-[0.7rem] text-text-tertiary uppercase">vps</span>
+              <span className="text-text font-mono text-[0.8rem]">{VPS_PROVIDER_LABELS[vpsProvider] || vpsProvider}</span>
               <span className="font-mono text-[0.7rem] text-text-tertiary uppercase">ssh_key</span>
               <span className="text-text font-mono text-[0.8rem]">
                 {effectiveSSHKey ? effectiveSSHKey.slice(0, 40) + '...' : '(none)'}
@@ -424,7 +451,7 @@ export function CreateServerWizard({ onSubmit, onCancel, initialSSHKey }: Props)
       },
     ],
     [
-      name, sshMode, sshKey, generatedPublicKey, generatedPrivateKey, downloadTriggered,
+      name, vpsProvider, providers, sshMode, sshKey, generatedPublicKey, generatedPrivateKey, downloadTriggered,
       keySaved, ed25519Supported, provider, providerKey, showProviderKey, wayfinderKey,
       showWayfinderKey, channels, meta, error, effectiveSSHKey, initialSSHKey,
       sshStepDisabled, disclaimerAccepted, handleGenerate, handleDownload,
@@ -437,6 +464,7 @@ export function CreateServerWizard({ onSubmit, onCancel, initialSSHKey }: Props)
       const req: CreateServerRequest = {
         wayfinder_api_key: wayfinderKey.trim(),
         public_key_pem: kp.publicKeyPEM,
+        provider: vpsProvider,
       }
       if (name.trim()) req.name = name.trim()
       if (effectiveSSHKey.trim()) req.ssh_public_key = effectiveSSHKey.trim()

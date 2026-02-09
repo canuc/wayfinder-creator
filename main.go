@@ -44,11 +44,21 @@ func main() {
 		}
 	}()
 
-	hetzner := NewHetznerClient(cfg)
+	providers := make(map[string]VPSProvider)
+	if cfg.HCloudToken != "" {
+		h := NewHetznerClient(cfg)
+		providers[h.Name()] = h
+		slog.Info("registered provider", "name", h.Name())
+	}
+	if cfg.VultrAPIKey != "" {
+		v := NewVultrClient(cfg)
+		providers[v.Name()] = v
+		slog.Info("registered provider", "name", v.Name())
+	}
 	provisioner := NewProvisioner(cfg)
 	hub := NewLogHub()
 
-	srv := NewServer(cfg, hetzner, provisioner, store, hub)
+	srv := NewServer(cfg, providers, provisioner, store, hub)
 
 	// Periodically clean expired challenges
 	go func() {

@@ -81,6 +81,19 @@ func (s *Store) Migrate() error {
 		ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key;
 
 		ALTER TABLE users ADD COLUMN IF NOT EXISTS ssh_public_key TEXT NOT NULL DEFAULT '';
+
+		ALTER TABLE servers ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'hetzner';
+
+		ALTER TABLE servers ADD COLUMN IF NOT EXISTS provider_id TEXT NOT NULL DEFAULT '';
+		UPDATE servers SET provider_id = id::TEXT WHERE provider_id = '';
+
+		DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'servers_id_seq') THEN
+				CREATE SEQUENCE servers_id_seq;
+				PERFORM setval('servers_id_seq', COALESCE((SELECT MAX(id) FROM servers), 0));
+			END IF;
+		END $$;
+		ALTER TABLE servers ALTER COLUMN id SET DEFAULT nextval('servers_id_seq');
 	`)
 	return err
 }
@@ -110,11 +123,12 @@ func (s *Store) CreateServer(info *ServerInfo, opts ProvisionOpts, userID int64)
 	if err != nil {
 		channelsJSON = []byte("[]")
 	}
-	_, err = s.db.Exec(`
-		INSERT INTO servers (id, name, ipv4, status, provisioned, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels, public_key, user_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-	`, info.ID, info.Name, info.IPv4, info.Status, info.Provisioned,
-		opts.SSHPublicKey, opts.AnthropicAPIKey, opts.OpenAIAPIKey, opts.GeminiAPIKey, opts.WayfinderAPIKey, channelsJSON, opts.CreatorPublicKey, userID)
+	err = s.db.QueryRow(`
+		INSERT INTO servers (name, ipv4, status, provisioned, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels, public_key, user_id, provider, provider_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		RETURNING id
+	`, info.Name, info.IPv4, info.Status, info.Provisioned,
+		opts.SSHPublicKey, opts.AnthropicAPIKey, opts.OpenAIAPIKey, opts.GeminiAPIKey, opts.WayfinderAPIKey, channelsJSON, opts.CreatorPublicKey, userID, info.Provider, info.ProviderID).Scan(&info.ID)
 	return err
 }
 
@@ -123,10 +137,10 @@ func (s *Store) GetServer(id, userID int64) (*ServerInfo, error) {
 	var channelsJSON []byte
 	err := s.db.QueryRow(`
 		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed,
-		       (public_key != '') AS has_node_api, created_at, channels
+		       (public_key != '') AS has_node_api, created_at, channels, provider, provider_id
 		FROM servers WHERE id=$1 AND user_id=$2
 	`, id, userID).Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned,
-		&info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI, &info.CreatedAt, &channelsJSON)
+		&info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI, &info.CreatedAt, &channelsJSON, &info.Provider, &info.ProviderID)
 	if err != nil {
 		return nil, err
 	}
@@ -143,9 +157,9 @@ func (s *Store) GetServer(id, userID int64) (*ServerInfo, error) {
 func (s *Store) GetServerAny(id int64) (*ServerInfo, error) {
 	var info ServerInfo
 	err := s.db.QueryRow(`
-		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed, (public_key != '') AS has_node_api
+		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed, (public_key != '') AS has_node_api, provider, provider_id
 		FROM servers WHERE id=$1
-	`, id).Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned, &info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI)
+	`, id).Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned, &info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI, &info.Provider, &info.ProviderID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +169,7 @@ func (s *Store) GetServerAny(id int64) (*ServerInfo, error) {
 func (s *Store) ListServers(userID int64) ([]*ServerInfo, error) {
 	rows, err := s.db.Query(`
 		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed,
-		       (public_key != '') AS has_node_api, created_at, channels
+		       (public_key != '') AS has_node_api, created_at, channels, provider, provider_id
 		FROM servers WHERE user_id=$1 ORDER BY created_at DESC
 	`, userID)
 	if err != nil {
@@ -168,7 +182,7 @@ func (s *Store) ListServers(userID int64) ([]*ServerInfo, error) {
 		var info ServerInfo
 		var channelsJSON []byte
 		if err := rows.Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned,
-			&info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI, &info.CreatedAt, &channelsJSON); err != nil {
+			&info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI, &info.CreatedAt, &channelsJSON, &info.Provider, &info.ProviderID); err != nil {
 			return nil, err
 		}
 		if len(channelsJSON) > 0 {

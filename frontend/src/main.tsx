@@ -8,7 +8,7 @@ async function init() {
   const config = await getConfig()
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App walletConnectProjectId={config.walletconnect_project_id} />
+      <App walletConnectProjectId={config.walletconnect_project_id} providers={config.providers || []} />
     </StrictMode>,
   )
 }

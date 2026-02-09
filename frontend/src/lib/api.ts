@@ -80,7 +80,7 @@ export async function verifyChallenge(
   })
 }
 
-export async function getConfig(): Promise<{ walletconnect_project_id: string }> {
+export async function getConfig(): Promise<{ walletconnect_project_id: string; providers: string[] }> {
   return request('/config')
 }
 
