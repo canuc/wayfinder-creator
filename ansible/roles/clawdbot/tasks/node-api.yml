@@ -1,0 +1,56 @@
+---
+# Deploy openclaw-node-api binary and systemd service
+
+- name: Set node API binary name for architecture
+  ansible.builtin.set_fact:
+    nodeapi_binary: "openclaw-node-api-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+
+- name: Copy openclaw-node-api binary
+  ansible.builtin.copy:
+    src: "{{ nodeapi_binary }}"
+    dest: /usr/local/bin/openclaw-node-api
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart openclaw-node-api
+
+- name: Write creator public key PEM
+  ansible.builtin.copy:
+    content: "{{ creator_public_key }}"
+    dest: "{{ clawdbot_config_dir }}/creator-public-key.pem"
+    owner: "{{ clawdbot_user }}"
+    group: "{{ clawdbot_user }}"
+    mode: '0644'
+  notify: Restart openclaw-node-api
+
+- name: Create openclaw-node-api systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/openclaw-node-api.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Openclaw Node API
+      After=network.target
+      StartLimitIntervalSec=300
+      StartLimitBurst=5
+
+      [Service]
+      Type=simple
+      User={{ clawdbot_user }}
+      Group={{ clawdbot_user }}
+      ExecStart=/usr/local/bin/openclaw-node-api --listen :8443 --pubkey {{ clawdbot_config_dir }}/creator-public-key.pem
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart openclaw-node-api
+
+- name: Enable and start openclaw-node-api
+  ansible.builtin.systemd:
+    name: openclaw-node-api
+    state: started
+    enabled: true
+    daemon_reload: true
