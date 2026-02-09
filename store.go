@@ -52,6 +52,35 @@ func (s *Store) Migrate() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_server_logs_server_id ON server_logs(server_id);
 		ALTER TABLE servers ADD COLUMN IF NOT EXISTS public_key TEXT NOT NULL DEFAULT '';
+
+		CREATE TABLE IF NOT EXISTS users (
+			id BIGSERIAL PRIMARY KEY,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'user',
+			approved BOOLEAN NOT NULL DEFAULT false,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
+
+		CREATE TABLE IF NOT EXISTS sessions (
+			id TEXT PRIMARY KEY,
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			expires_at TIMESTAMPTZ NOT NULL
+		);
+
+		ALTER TABLE servers ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id);
+
+		ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';
+		ALTER TABLE users ADD COLUMN IF NOT EXISTS public_key TEXT NOT NULL DEFAULT '';
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_users_address ON users(address);
+
+		-- Drop legacy email/password auth constraints
+		ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+		ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+		ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key;
+
+		ALTER TABLE users ADD COLUMN IF NOT EXISTS ssh_public_key TEXT NOT NULL DEFAULT '';
 	`)
 	return err
 }
@@ -76,20 +105,42 @@ func (s *Store) FailStaleProvisioningServers() {
 	}
 }
 
-func (s *Store) CreateServer(info *ServerInfo, opts ProvisionOpts) error {
+func (s *Store) CreateServer(info *ServerInfo, opts ProvisionOpts, userID int64) error {
 	channelsJSON, err := json.Marshal(opts.Channels)
 	if err != nil {
 		channelsJSON = []byte("[]")
 	}
 	_, err = s.db.Exec(`
-		INSERT INTO servers (id, name, ipv4, status, provisioned, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels, public_key)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		INSERT INTO servers (id, name, ipv4, status, provisioned, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels, public_key, user_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`, info.ID, info.Name, info.IPv4, info.Status, info.Provisioned,
-		opts.SSHPublicKey, opts.AnthropicAPIKey, opts.OpenAIAPIKey, opts.GeminiAPIKey, opts.WayfinderAPIKey, channelsJSON, opts.CreatorPublicKey)
+		opts.SSHPublicKey, opts.AnthropicAPIKey, opts.OpenAIAPIKey, opts.GeminiAPIKey, opts.WayfinderAPIKey, channelsJSON, opts.CreatorPublicKey, userID)
 	return err
 }
 
-func (s *Store) GetServer(id int64) (*ServerInfo, error) {
+func (s *Store) GetServer(id, userID int64) (*ServerInfo, error) {
+	var info ServerInfo
+	var channelsJSON []byte
+	err := s.db.QueryRow(`
+		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed,
+		       (public_key != '') AS has_node_api, created_at, channels
+		FROM servers WHERE id=$1 AND user_id=$2
+	`, id, userID).Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned,
+		&info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI, &info.CreatedAt, &channelsJSON)
+	if err != nil {
+		return nil, err
+	}
+	if len(channelsJSON) > 0 {
+		var ch []any
+		if json.Unmarshal(channelsJSON, &ch) == nil {
+			info.ChannelCount = len(ch)
+		}
+	}
+	return &info, nil
+}
+
+// GetServerAny retrieves a server without user scoping (for WebSocket, internal use)
+func (s *Store) GetServerAny(id int64) (*ServerInfo, error) {
 	var info ServerInfo
 	err := s.db.QueryRow(`
 		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed, (public_key != '') AS has_node_api
@@ -101,11 +152,12 @@ func (s *Store) GetServer(id int64) (*ServerInfo, error) {
 	return &info, nil
 }
 
-func (s *Store) ListServers() ([]*ServerInfo, error) {
+func (s *Store) ListServers(userID int64) ([]*ServerInfo, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed, (public_key != '') AS has_node_api
-		FROM servers ORDER BY created_at DESC
-	`)
+		SELECT id, name, ipv4, status, provisioned, wallet_address, default_key_removed,
+		       (public_key != '') AS has_node_api, created_at, channels
+		FROM servers WHERE user_id=$1 ORDER BY created_at DESC
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -114,8 +166,16 @@ func (s *Store) ListServers() ([]*ServerInfo, error) {
 	var servers []*ServerInfo
 	for rows.Next() {
 		var info ServerInfo
-		if err := rows.Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned, &info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI); err != nil {
+		var channelsJSON []byte
+		if err := rows.Scan(&info.ID, &info.Name, &info.IPv4, &info.Status, &info.Provisioned,
+			&info.WalletAddress, &info.DefaultKeyRemoved, &info.HasNodeAPI, &info.CreatedAt, &channelsJSON); err != nil {
 			return nil, err
+		}
+		if len(channelsJSON) > 0 {
+			var ch []any
+			if json.Unmarshal(channelsJSON, &ch) == nil {
+				info.ChannelCount = len(ch)
+			}
 		}
 		servers = append(servers, &info)
 	}
@@ -194,9 +254,16 @@ func (s *Store) ClearLogs(id int64) {
 	}
 }
 
-func (s *Store) DeleteServer(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM servers WHERE id=$1`, id)
-	return err
+func (s *Store) DeleteServer(id, userID int64) error {
+	result, err := s.db.Exec(`DELETE FROM servers WHERE id=$1 AND user_id=$2`, id, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("server not found")
+	}
+	return nil
 }
 
 func (s *Store) GetProvisionOpts(id int64) (*ProvisionOpts, error) {
@@ -217,11 +284,11 @@ func (s *Store) GetProvisionOpts(id int64) (*ProvisionOpts, error) {
 	return &opts, nil
 }
 
-func (s *Store) ResetForReprovision(id int64) error {
+func (s *Store) ResetForReprovision(id, userID int64) error {
 	result, err := s.db.Exec(`
 		UPDATE servers SET status='provisioning', provisioned=false
-		WHERE id=$1 AND status='failed' AND default_key_removed=false
-	`, id)
+		WHERE id=$1 AND user_id=$2 AND status='failed' AND default_key_removed=false
+	`, id, userID)
 	if err != nil {
 		return err
 	}
@@ -231,4 +298,22 @@ func (s *Store) ResetForReprovision(id int64) error {
 	}
 	s.ClearLogs(id)
 	return nil
+}
+
+// BackfillFirstAdmin assigns all servers without a user_id to the first admin user
+func (s *Store) BackfillFirstAdmin() {
+	var adminID int64
+	err := s.db.QueryRow(`SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1`).Scan(&adminID)
+	if err != nil {
+		return
+	}
+	result, err := s.db.Exec(`UPDATE servers SET user_id=$1 WHERE user_id IS NULL`, adminID)
+	if err != nil {
+		slog.Error("failed to backfill server user_id", "error", err)
+		return
+	}
+	n, _ := result.RowsAffected()
+	if n > 0 {
+		slog.Info("backfilled servers to first admin", "count", n, "admin_id", adminID)
+	}
 }

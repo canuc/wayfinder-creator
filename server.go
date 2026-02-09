@@ -2,11 +2,11 @@ package main
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -16,27 +16,27 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-//go:embed static/index.html
-var indexHTML embed.FS
+//go:embed static/*
+var staticFS embed.FS
 
 type Server struct {
+	config      *Config
 	hetzner     *HetznerClient
 	provisioner *Provisioner
 	store       *Store
 	hub         *LogHub
-	username    string
-	password    string
+	challenges  *ChallengeStore
 	upgrader    websocket.Upgrader
 }
 
-func NewServer(hetzner *HetznerClient, provisioner *Provisioner, store *Store, hub *LogHub, username, password string) *Server {
+func NewServer(cfg *Config, hetzner *HetznerClient, provisioner *Provisioner, store *Store, hub *LogHub) *Server {
 	return &Server{
+		config:      cfg,
 		hetzner:     hetzner,
 		provisioner: provisioner,
 		store:       store,
 		hub:         hub,
-		username:    username,
-		password:    password,
+		challenges:  NewChallengeStore(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -45,36 +45,44 @@ func NewServer(hetzner *HetznerClient, provisioner *Provisioner, store *Store, h
 
 func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /servers", s.handleCreateServer)
-	mux.HandleFunc("GET /servers", s.handleListServers)
-	mux.HandleFunc("GET /servers/{id}/ws", s.handleWebSocket)
-	mux.HandleFunc("POST /servers/{id}/reprovision", s.handleReprovision)
-	mux.HandleFunc("POST /servers/{id}/public-key", s.handleSetPublicKey)
-	mux.HandleFunc("GET /servers/{id}/pairing/requests", s.handlePairingRequests)
-	mux.HandleFunc("POST /servers/{id}/pairing/approve", s.handlePairingApprove)
-	mux.HandleFunc("POST /servers/{id}/pairing/deny", s.handlePairingDeny)
-	mux.HandleFunc("GET /servers/{id}/channels/status", s.handleChannelsStatus)
-	mux.HandleFunc("GET /servers/{id}", s.handleGetServer)
-	mux.HandleFunc("DELETE /servers/{id}", s.handleDeleteServer)
-	mux.HandleFunc("GET /", s.handleIndex)
-	return s.basicAuth(mux)
-}
 
-func (s *Server) basicAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
-		if !ok ||
-			subtle.ConstantTimeCompare([]byte(user), []byte(s.username)) != 1 ||
-			subtle.ConstantTimeCompare([]byte(pass), []byte(s.password)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="openclaw"`)
-			writeJSON(w, http.StatusUnauthorized, ErrorResponse{Error: "unauthorized"})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	// Auth routes (public)
+	mux.HandleFunc("POST /auth/challenge", s.handleChallenge)
+	mux.HandleFunc("POST /auth/verify", s.handleVerify)
+	mux.HandleFunc("POST /auth/logout", s.handleLogout)
+	mux.HandleFunc("GET /auth/me", s.handleMe)
+	mux.HandleFunc("PUT /auth/ssh-key", s.requireApproved(s.handleSetSSHKey))
+
+	// Admin routes (require admin)
+	mux.HandleFunc("GET /admin/users", s.requireAdmin(s.handleListUsers))
+	mux.HandleFunc("POST /admin/users/{id}/approve", s.requireAdmin(s.handleApproveUser))
+	mux.HandleFunc("DELETE /admin/users/{id}", s.requireAdmin(s.handleDeleteUser))
+
+	// Server routes (require approved user)
+	mux.HandleFunc("POST /servers", s.requireApproved(s.handleCreateServer))
+	mux.HandleFunc("GET /servers", s.requireApproved(s.handleListServers))
+	mux.HandleFunc("GET /servers/{id}/ws", s.handleWebSocket) // WS auth handled inline
+	mux.HandleFunc("POST /servers/{id}/reprovision", s.requireApproved(s.handleReprovision))
+	mux.HandleFunc("POST /servers/{id}/public-key", s.requireApproved(s.handleSetPublicKey))
+	mux.HandleFunc("GET /servers/{id}/pairing/requests", s.requireApproved(s.handlePairingRequests))
+	mux.HandleFunc("POST /servers/{id}/pairing/approve", s.requireApproved(s.handlePairingApprove))
+	mux.HandleFunc("POST /servers/{id}/pairing/deny", s.requireApproved(s.handlePairingDeny))
+	mux.HandleFunc("GET /servers/{id}/channels/status", s.requireApproved(s.handleChannelsStatus))
+	mux.HandleFunc("GET /servers/{id}", s.requireApproved(s.handleGetServer))
+	mux.HandleFunc("DELETE /servers/{id}", s.requireApproved(s.handleDeleteServer))
+
+	// Public config
+	mux.HandleFunc("GET /config", s.handleConfig)
+
+	// SPA static files
+	mux.HandleFunc("GET /", s.handleSPA)
+
+	return mux
 }
 
 func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+
 	var req CreateServerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid request body"})
@@ -103,7 +111,7 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 		CreatorPublicKey: req.PublicKeyPEM,
 	}
 
-	if err := s.store.CreateServer(info, opts); err != nil {
+	if err := s.store.CreateServer(info, opts, user.ID); err != nil {
 		slog.Error("failed to store server", "error", err)
 		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "failed to persist server"})
 		return
@@ -163,13 +171,14 @@ func (s *Server) runProvision(id int64, opts ProvisionOpts, logFn func(string)) 
 }
 
 func (s *Server) handleGetServer(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid server id"})
 		return
 	}
 
-	info, err := s.store.GetServer(id)
+	info, err := s.store.GetServer(id, user.ID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "server not found"})
 		return
@@ -187,19 +196,23 @@ func (s *Server) handleGetServer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid server id"})
 		return
 	}
 
-	if err := s.hetzner.DeleteServer(r.Context(), id); err != nil {
-		slog.Error("failed to delete server", "error", err)
-		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+	if err := s.store.DeleteServer(id, user.ID); err != nil {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "server not found"})
 		return
 	}
 
-	s.store.DeleteServer(id)
+	if err := s.hetzner.DeleteServer(r.Context(), id); err != nil {
+		slog.Error("failed to delete server from hetzner", "error", err)
+		// Server already deleted from DB, log the error but don't fail
+	}
+
 	s.hub.Remove(id)
 
 	writeJSON(w, http.StatusOK, DeleteServerResponse{
@@ -209,7 +222,8 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
-	servers, err := s.store.ListServers()
+	user := userFromContext(r.Context())
+	servers, err := s.store.ListServers(user.ID)
 	if err != nil {
 		slog.Error("failed to list servers", "error", err)
 		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "failed to list servers"})
@@ -224,6 +238,8 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 		WalletAddress     string `json:"wallet_address,omitempty"`
 		DefaultKeyRemoved bool   `json:"default_key_removed"`
 		HasNodeAPI        bool   `json:"has_node_api"`
+		CreatedAt         string `json:"created_at,omitempty"`
+		ChannelCount      int    `json:"channel_count"`
 	}
 	out := make([]item, len(servers))
 	for i, info := range servers {
@@ -236,19 +252,28 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 			WalletAddress:     info.WalletAddress,
 			DefaultKeyRemoved: info.DefaultKeyRemoved,
 			HasNodeAPI:        info.HasNodeAPI,
+			CreatedAt:         info.CreatedAt,
+			ChannelCount:      info.ChannelCount,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// WebSocket auth: check session cookie
+	user, r := s.sessionAuth(r)
+	if user == nil || !user.Approved {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid server id", http.StatusBadRequest)
 		return
 	}
 
-	info, err := s.store.GetServer(id)
+	info, err := s.store.GetServer(id, user.ID)
 	if err != nil {
 		http.Error(w, "server not found", http.StatusNotFound)
 		return
@@ -336,7 +361,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				lastLogID = entry.ID
 			}
 			// Check if done
-			info, err = s.store.GetServer(id)
+			info, err = s.store.GetServerAny(id)
 			if err != nil {
 				return
 			}
@@ -361,13 +386,14 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReprovision(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid server id"})
 		return
 	}
 
-	if err := s.store.ResetForReprovision(id); err != nil {
+	if err := s.store.ResetForReprovision(id, user.ID); err != nil {
 		writeJSON(w, http.StatusConflict, ErrorResponse{Error: err.Error()})
 		return
 	}
@@ -457,7 +483,8 @@ func (s *Server) handleChannelsStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) proxyToNode(w http.ResponseWriter, r *http.Request, serverID int64, method, path string, body []byte) {
-	info, err := s.store.GetServer(serverID)
+	user := userFromContext(r.Context())
+	info, err := s.store.GetServer(serverID, user.ID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "server not found"})
 		return
@@ -514,8 +541,39 @@ func (s *Server) proxyToNode(w http.ResponseWriter, r *http.Request, serverID in
 	io.Copy(w, resp.Body)
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	data, _ := indexHTML.ReadFile("static/index.html")
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"walletconnect_project_id": s.config.WalletConnectProjectID,
+	})
+}
+
+func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
+	// Serve static files from embedded FS
+	sub, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Try to serve the exact file first
+	path := r.URL.Path
+	if path == "/" {
+		path = "/index.html"
+	}
+
+	f, err := sub.Open(strings.TrimPrefix(path, "/"))
+	if err == nil {
+		f.Close()
+		http.FileServerFS(sub).ServeHTTP(w, r)
+		return
+	}
+
+	// SPA fallback: serve index.html for non-file routes
+	data, err := staticFS.ReadFile("static/index.html")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(data)
 }

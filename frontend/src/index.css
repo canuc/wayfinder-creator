@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', -apple-system, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --color-bg: #06060a;
+  --color-bg-raised: #0c0c12;
+  --color-bg-input: #08080e;
+  --color-surface: #141420;
+  --color-surface-hover: #1a1a28;
+  --color-border: #1e1e2e;
+  --color-border-hover: #2e2e42;
+  --color-border-active: #3d3d56;
+  --color-accent: #10b981;
+  --color-accent-muted: rgba(16, 185, 129, 0.1);
+  --color-accent-text: #34d399;
+  --color-accent-glow: rgba(16, 185, 129, 0.06);
+  --color-danger: #ef4444;
+  --color-danger-muted: rgba(239, 68, 68, 0.08);
+  --color-warning: #f59e0b;
+  --color-warning-muted: rgba(245, 158, 11, 0.08);
+  --color-cyan: #22d3ee;
+  --color-cyan-muted: rgba(34, 211, 238, 0.08);
+  --color-text: #e8e8f0;
+  --color-text-secondary: #9898b0;
+  --color-text-tertiary: #5c5c78;
+  --color-text-dim: #3a3a52;
+
+  --radius-default: 6px;
+  --radius-lg: 10px;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Dot grid background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--color-border) 0.5px, transparent 0.5px);
+  background-size: 24px 24px;
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-hover);
+}
+
+/* Utility classes for technical elements */
+.tech-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+}
+
+.tech-divider {
+  height: 1px;
+  background: linear-gradient(to right, var(--color-border), transparent);
+}
+
+.tech-panel {
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  position: relative;
+}
+
+.tech-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--color-border-hover), transparent);
+}
+
+/* Glow effect for active/accent elements */
+.glow-accent {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.08), 0 0 40px rgba(16, 185, 129, 0.04);
+}
+
+.glow-accent-strong {
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.15), 0 0 30px rgba(16, 185, 129, 0.06);
+}
+
+/* Input focus glow */
+input:focus, textarea:focus, select:focus {
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.08);
+}
+
+/* Animations */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}

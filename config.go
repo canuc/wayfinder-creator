@@ -18,9 +18,9 @@ type Config struct {
 	AnsibleDir        string
 	SSHPrivateKey     string
 	SSHPrivateKeyData string
-	APIUsername       string
-	APIPassword       string
-	DatabaseURL       string
+	SessionSecret         string
+	DatabaseURL           string
+	WalletConnectProjectID string
 }
 
 func LoadConfig() (*Config, error) {
@@ -41,15 +41,6 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("SSH_KEY_ID must be an integer: %w", err)
 	}
 
-	apiUser := os.Getenv("API_USERNAME")
-	if apiUser == "" {
-		return nil, fmt.Errorf("API_USERNAME is required")
-	}
-	apiPass := os.Getenv("API_PASSWORD")
-	if apiPass == "" {
-		return nil, fmt.Errorf("API_PASSWORD is required")
-	}
-
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
@@ -65,9 +56,9 @@ func LoadConfig() (*Config, error) {
 		AnsibleDir:        envOrDefault("ANSIBLE_DIR", "./ansible"),
 		SSHPrivateKey:     envOrDefault("SSH_PRIVATE_KEY", "~/.ssh/id_ed25519"),
 		SSHPrivateKeyData: os.Getenv("SSH_PRIVATE_KEY_DATA"),
-		APIUsername:       apiUser,
-		APIPassword:       apiPass,
-		DatabaseURL:       dbURL,
+		SessionSecret:          envOrDefault("SESSION_SECRET", "openclaw-default-secret-change-me"),
+		DatabaseURL:            dbURL,
+		WalletConnectProjectID: os.Getenv("WALLETCONNECT_PROJECT_ID"),
 	}, nil
 }
 

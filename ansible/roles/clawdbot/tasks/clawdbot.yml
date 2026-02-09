@@ -130,6 +130,12 @@
       {% if ch.type == 'discord' and ch.token is defined and ch.token | length > 0 %}
       export DISCORD_BOT_TOKEN="{{ ch.token }}"
       {% endif %}
+      {% if ch.type == 'slack' and ch.token is defined and ch.token | length > 0 %}
+      export SLACK_BOT_TOKEN="{{ ch.token }}"
+      {% endif %}
+      {% if ch.type == 'slack' and ch.account is defined and ch.account | length > 0 %}
+      export SLACK_APP_TOKEN="{{ ch.account }}"
+      {% endif %}
       {% endfor %}
     create: true
     owner: "{{ clawdbot_user }}"
@@ -158,6 +164,12 @@
       {% if ch.type == 'discord' and ch.token is defined and ch.token | length > 0 %}
       export DISCORD_BOT_TOKEN="{{ ch.token }}"
       {% endif %}
+      {% if ch.type == 'slack' and ch.token is defined and ch.token | length > 0 %}
+      export SLACK_BOT_TOKEN="{{ ch.token }}"
+      {% endif %}
+      {% if ch.type == 'slack' and ch.account is defined and ch.account | length > 0 %}
+      export SLACK_APP_TOKEN="{{ ch.account }}"
+      {% endif %}
       {% endfor %}
     create: true
     owner: "{{ clawdbot_user }}"
@@ -184,6 +196,12 @@
       {% endif %}
       {% if ch.type == 'discord' and ch.token is defined and ch.token | length > 0 %}
       DISCORD_BOT_TOKEN={{ ch.token }}
+      {% endif %}
+      {% if ch.type == 'slack' and ch.token is defined and ch.token | length > 0 %}
+      SLACK_BOT_TOKEN={{ ch.token }}
+      {% endif %}
+      {% if ch.type == 'slack' and ch.account is defined and ch.account | length > 0 %}
+      SLACK_APP_TOKEN={{ ch.account }}
       {% endif %}
       {% endfor %}
     owner: "{{ clawdbot_user }}"
@@ -239,6 +257,8 @@
     GEMINI_API_KEY: "{{ gemini_api_key }}"
     TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
     DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_APP_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.account is defined %}{{ ch.account }}{% endif %}{% endfor %}"
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
@@ -262,6 +282,8 @@
     GEMINI_API_KEY: "{{ gemini_api_key }}"
     TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
     DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_APP_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.account is defined %}{{ ch.account }}{% endif %}{% endfor %}"
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
@@ -302,6 +324,8 @@
   become_user: "{{ clawdbot_user }}"
   environment:
     DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_APP_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.account is defined %}{{ ch.account }}{% endif %}{% endfor %}"
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
@@ -313,6 +337,27 @@
   ansible.builtin.debug:
     msg: "{{ discord_plugin_result.stdout | default(discord_plugin_result.stderr | default('no output')) }}"
   when: channels | selectattr('type', 'equalto', 'discord') | list | length > 0
+
+- name: Install Slack channel plugin
+  ansible.builtin.shell:
+    cmd: "pnpm install -g @openclaw/channel-slack@latest 2>&1"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ clawdbot_user }}"
+  environment:
+    SLACK_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_APP_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.account is defined %}{{ ch.account }}{% endif %}{% endfor %}"
+    PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
+    PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+    HOME: "{{ clawdbot_home }}"
+  when: channels | selectattr('type', 'equalto', 'slack') | list | length > 0
+  register: slack_plugin_result
+  failed_when: false
+
+- name: Display Slack plugin install output
+  ansible.builtin.debug:
+    msg: "{{ slack_plugin_result.stdout | default(slack_plugin_result.stderr | default('no output')) }}"
+  when: channels | selectattr('type', 'equalto', 'slack') | list | length > 0
 
 - name: Add channels
   ansible.builtin.shell:
@@ -329,6 +374,8 @@
   environment:
     TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
     DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_APP_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.account is defined %}{{ ch.account }}{% endif %}{% endfor %}"
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
@@ -354,6 +401,8 @@
     GEMINI_API_KEY: "{{ gemini_api_key }}"
     TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
     DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_APP_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.account is defined %}{{ ch.account }}{% endif %}{% endfor %}"
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
@@ -378,6 +427,8 @@
     GEMINI_API_KEY: "{{ gemini_api_key }}"
     TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
     DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_APP_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.account is defined %}{{ ch.account }}{% endif %}{% endfor %}"
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
@@ -422,6 +473,8 @@
     GEMINI_API_KEY: "{{ gemini_api_key }}"
     TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
     DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_APP_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.account is defined %}{{ ch.account }}{% endif %}{% endfor %}"
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"
@@ -446,6 +499,8 @@
     GEMINI_API_KEY: "{{ gemini_api_key }}"
     TELEGRAM_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'telegram' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
     DISCORD_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'discord' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_BOT_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.token is defined %}{{ ch.token }}{% endif %}{% endfor %}"
+    SLACK_APP_TOKEN: "{% for ch in channels %}{% if ch.type == 'slack' and ch.account is defined %}{{ ch.account }}{% endif %}{% endfor %}"
     PNPM_HOME: "{{ clawdbot_home }}/.local/share/pnpm"
     PATH: "{{ clawdbot_home }}/.local/bin:{{ clawdbot_home }}/.local/share/pnpm:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
     HOME: "{{ clawdbot_home }}"

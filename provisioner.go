@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -295,12 +296,20 @@ func collectSecrets(opts ProvisionOpts) []string {
 	return secrets
 }
 
+// pathPattern matches absolute file paths like /tmp/foo, /home/user/.ssh/key, etc.
+var pathPattern = regexp.MustCompile(`(?:/[\w.\-]+){2,}`)
+
 func redactLine(line string, secrets []string) string {
 	for _, s := range secrets {
 		if strings.Contains(line, s) {
 			line = strings.ReplaceAll(line, s, s[:3]+"***")
 		}
 	}
+	// Obfuscate file paths — replace full paths with just the basename
+	line = pathPattern.ReplaceAllStringFunc(line, func(match string) string {
+		base := filepath.Base(match)
+		return base
+	})
 	return line
 }
 

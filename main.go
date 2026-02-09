@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"time"
 )
 
 func main() {
@@ -35,11 +36,27 @@ func main() {
 
 	store.FailStaleProvisioningServers()
 
+	// Periodically clean expired sessions
+	go func() {
+		for {
+			time.Sleep(1 * time.Hour)
+			store.CleanExpiredSessions()
+		}
+	}()
+
 	hetzner := NewHetznerClient(cfg)
 	provisioner := NewProvisioner(cfg)
 	hub := NewLogHub()
 
-	srv := NewServer(hetzner, provisioner, store, hub, cfg.APIUsername, cfg.APIPassword)
+	srv := NewServer(cfg, hetzner, provisioner, store, hub)
+
+	// Periodically clean expired challenges
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			srv.challenges.Cleanup()
+		}
+	}()
 
 	slog.Info("starting server", "addr", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, srv.Router()); err != nil {

@@ -57,6 +57,8 @@ type ServerInfo struct {
 	WalletAddress     string
 	DefaultKeyRemoved bool
 	HasNodeAPI        bool
+	CreatedAt         string
+	ChannelCount      int
 }
 
 type LogEntry struct {
@@ -77,4 +79,41 @@ type PairingRequest struct {
 type PairingActionRequest struct {
 	Channel string `json:"channel"`
 	Code    string `json:"code"`
+}
+
+// Auth types
+
+type User struct {
+	ID           int64  `json:"id"`
+	Address      string `json:"address"`
+	PublicKey    string `json:"-"`
+	Role         string `json:"role"`
+	Approved     bool   `json:"approved"`
+	SSHPublicKey string `json:"ssh_public_key"`
+	CreatedAt    string `json:"created_at"`
+}
+
+type Session struct {
+	ID        string
+	UserID    int64
+	CreatedAt string
+	ExpiresAt string
+}
+
+type ChallengeRequest struct {
+	Address string `json:"address"`
+}
+
+type ChallengeResponse struct {
+	Challenge string `json:"challenge"`
+}
+
+type VerifyRequest struct {
+	Address   string `json:"address"`
+	Signature string `json:"signature"`
+	Challenge string `json:"challenge"`
+}
+
+type AuthResponse struct {
+	User *User `json:"user"`
 }
