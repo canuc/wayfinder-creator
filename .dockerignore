@@ -4,3 +4,4 @@
 **/.env
 **/test.sh
 fly.toml
+**/node_modules
