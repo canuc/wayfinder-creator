@@ -6,12 +6,11 @@ interface Props {
   serverIP: string
   status: string
   logs: string[]
-  defaultKeyRemoved: boolean
   onBack: () => void
-  onReprovision?: () => void
+  onDelete?: () => void
 }
 
-export function LogViewer({ serverName, serverIP, status, logs, defaultKeyRemoved, onBack, onReprovision }: Props) {
+export function LogViewer({ serverName, serverIP, status, logs, onBack, onDelete }: Props) {
   const terminalRef = useRef<HTMLPreElement>(null)
 
   useEffect(() => {
@@ -60,28 +59,33 @@ export function LogViewer({ serverName, serverIP, status, logs, defaultKeyRemove
           {logs.join('\n')}
         </pre>
 
-        {(status === 'ready' || status === 'failed') && (
+        {status === 'ready' && (
           <div className="mt-3 flex items-center gap-3 pt-3 border-t border-border/50">
-            {status === 'ready' && (
-              <span className="font-mono text-[0.75rem] text-accent-text">
-                provisioning complete
-              </span>
-            )}
-            {status === 'failed' && (
-              <>
-                <span className="font-mono text-[0.75rem] text-red-400">
-                  provisioning failed
-                </span>
-                {!defaultKeyRemoved && onReprovision && (
-                  <button
-                    onClick={onReprovision}
-                    className="bg-transparent text-warning border border-warning/30 font-mono text-[0.75rem] font-medium px-3 py-1 rounded-md cursor-pointer hover:bg-warning-muted transition-colors"
-                  >
-                    /re-provision
-                  </button>
-                )}
-              </>
-            )}
+            <span className="font-mono text-[0.75rem] text-accent-text">
+              provisioning complete
+            </span>
+          </div>
+        )}
+        {status === 'failed' && (
+          <div className="mt-3 pt-3 border-t border-border/50">
+            <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 flex items-start gap-3">
+              <div className="flex-1">
+                <p className="font-mono text-[0.75rem] text-red-400 font-medium">
+                  Provisioning failed
+                </p>
+                <p className="font-mono text-[0.7rem] text-text-dim mt-1">
+                  This server cannot be recovered. Delete it and create a new one.
+                </p>
+              </div>
+              {onDelete && (
+                <button
+                  onClick={onDelete}
+                  className="bg-red-500/10 text-red-400 border border-red-500/30 font-mono text-[0.75rem] font-medium px-3 py-1 rounded-md cursor-pointer hover:bg-red-500/20 transition-colors shrink-0"
+                >
+                  terminate
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

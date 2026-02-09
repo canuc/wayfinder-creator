@@ -266,38 +266,17 @@ func (s *Store) DeleteServer(id, userID int64) error {
 	return nil
 }
 
-func (s *Store) GetProvisionOpts(id int64) (*ProvisionOpts, error) {
-	var opts ProvisionOpts
-	var channelsJSON []byte
-	var ip string
-	err := s.db.QueryRow(`
-		SELECT ipv4, ssh_public_key, anthropic_api_key, openai_api_key, gemini_api_key, wayfinder_api_key, channels, public_key
-		FROM servers WHERE id=$1
-	`, id).Scan(&ip, &opts.SSHPublicKey, &opts.AnthropicAPIKey, &opts.OpenAIAPIKey, &opts.GeminiAPIKey, &opts.WayfinderAPIKey, &channelsJSON, &opts.CreatorPublicKey)
+// ClearChannelTokens strips token fields from the channels JSONB, keeping type/name/account.
+func (s *Store) ClearChannelTokens(id int64) {
+	_, err := s.db.Exec(`
+		UPDATE servers SET channels = (
+			SELECT COALESCE(jsonb_agg(ch - 'token'), '[]'::jsonb)
+			FROM jsonb_array_elements(channels) AS ch
+		) WHERE id=$1
+	`, id)
 	if err != nil {
-		return nil, err
+		slog.Error("failed to clear channel tokens", "server_id", id, "error", err)
 	}
-	opts.IP = ip
-	if len(channelsJSON) > 0 {
-		json.Unmarshal(channelsJSON, &opts.Channels)
-	}
-	return &opts, nil
-}
-
-func (s *Store) ResetForReprovision(id, userID int64) error {
-	result, err := s.db.Exec(`
-		UPDATE servers SET status='provisioning', provisioned=false
-		WHERE id=$1 AND user_id=$2 AND status='failed' AND default_key_removed=false
-	`, id, userID)
-	if err != nil {
-		return err
-	}
-	n, _ := result.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("server %d is not eligible for re-provisioning", id)
-	}
-	s.ClearLogs(id)
-	return nil
 }
 
 // BackfillFirstAdmin assigns all servers without a user_id to the first admin user

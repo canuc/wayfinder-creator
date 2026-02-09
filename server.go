@@ -62,7 +62,6 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /servers", s.requireApproved(s.handleCreateServer))
 	mux.HandleFunc("GET /servers", s.requireApproved(s.handleListServers))
 	mux.HandleFunc("GET /servers/{id}/ws", s.handleWebSocket) // WS auth handled inline
-	mux.HandleFunc("POST /servers/{id}/reprovision", s.requireApproved(s.handleReprovision))
 	mux.HandleFunc("POST /servers/{id}/public-key", s.requireApproved(s.handleSetPublicKey))
 	mux.HandleFunc("GET /servers/{id}/pairing/requests", s.requireApproved(s.handlePairingRequests))
 	mux.HandleFunc("POST /servers/{id}/pairing/approve", s.requireApproved(s.handlePairingApprove))
@@ -149,6 +148,7 @@ func (s *Server) runProvision(id int64, opts ProvisionOpts, logFn func(string)) 
 		slog.Error("SSH wait failed", "server_id", id, "error", err)
 		logFn("SSH wait failed: " + err.Error())
 		s.store.UpdateStatus(id, "failed", false)
+		s.store.ClearChannelTokens(id)
 		s.hub.Notify(id)
 		return
 	}
@@ -157,6 +157,7 @@ func (s *Server) runProvision(id int64, opts ProvisionOpts, logFn func(string)) 
 	if err != nil {
 		slog.Error("provisioning failed", "server_id", id, "error", err)
 		s.store.UpdateStatus(id, "failed", false)
+		s.store.ClearChannelTokens(id)
 		s.hub.Notify(id)
 		return
 	}
@@ -167,6 +168,7 @@ func (s *Server) runProvision(id int64, opts ProvisionOpts, logFn func(string)) 
 		s.store.SetDefaultKeyRemoved(id, true)
 	}
 	s.store.UpdateStatus(id, "ready", true)
+	s.store.ClearChannelTokens(id)
 	s.hub.Notify(id)
 }
 
@@ -383,58 +385,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-}
-
-func (s *Server) handleReprovision(w http.ResponseWriter, r *http.Request) {
-	user := userFromContext(r.Context())
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid server id"})
-		return
-	}
-
-	if err := s.store.ResetForReprovision(id, user.ID); err != nil {
-		writeJSON(w, http.StatusConflict, ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	opts, err := s.store.GetProvisionOpts(id)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "failed to load provision options"})
-		return
-	}
-
-	logFn := s.makeLogFn(id, opts.SSHPublicKey != "")
-	s.hub.Notify(id)
-
-	go func() {
-		logFn("Re-provisioning server...")
-		if err := s.provisioner.CheckSSH(opts.IP, logFn); err != nil {
-			slog.Error("SSH check failed during re-provision", "server_id", id, "error", err)
-			logFn("SSH check failed: " + err.Error())
-			s.store.UpdateStatus(id, "failed", false)
-			s.hub.Notify(id)
-			return
-		}
-
-		result, err := s.provisioner.RunPlaybook(*opts, logFn)
-		if err != nil {
-			slog.Error("re-provisioning failed", "server_id", id, "error", err)
-			s.store.UpdateStatus(id, "failed", false)
-			s.hub.Notify(id)
-			return
-		}
-		if result.WalletAddress != "" {
-			s.store.SetWalletAddress(id, result.WalletAddress)
-		}
-		if opts.SSHPublicKey != "" {
-			s.store.SetDefaultKeyRemoved(id, true)
-		}
-		s.store.UpdateStatus(id, "ready", true)
-		s.hub.Notify(id)
-	}()
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "reprovisioning"})
 }
 
 func (s *Server) handleSetPublicKey(w http.ResponseWriter, r *http.Request) {

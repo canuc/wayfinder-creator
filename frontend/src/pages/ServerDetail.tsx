@@ -24,15 +24,16 @@ export function ServerDetail() {
     })
   }, [serverId])
 
-  const handleReprovision = useCallback(async () => {
+  const handleDelete = useCallback(async () => {
     if (!serverId) return
+    if (!confirm('Are you sure you want to terminate this server? This cannot be undone.')) return
     try {
-      await api.reprovisionServer(serverId)
-      ws.reconnect()
+      await api.deleteServer(serverId)
+      navigate('/')
     } catch (err) {
-      alert('Re-provision failed: ' + (err as Error).message)
+      alert('Delete failed: ' + (err as Error).message)
     }
-  }, [serverId, ws])
+  }, [serverId, navigate])
 
   const handleBack = useCallback(() => {
     navigate('/')
@@ -71,9 +72,8 @@ export function ServerDetail() {
         serverIP={ws.serverIP || server.ipv4}
         status={ws.status || server.status}
         logs={ws.logs}
-        defaultKeyRemoved={ws.defaultKeyRemoved}
         onBack={handleBack}
-        onReprovision={handleReprovision}
+        onDelete={handleDelete}
       />
     </Layout>
   )

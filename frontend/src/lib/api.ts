@@ -32,10 +32,6 @@ export async function deleteServer(id: number): Promise<void> {
   await request(`/servers/${id}`, { method: 'DELETE' })
 }
 
-export async function reprovisionServer(id: number): Promise<void> {
-  await request(`/servers/${id}/reprovision`, { method: 'POST' })
-}
-
 export async function setPublicKey(id: number, publicKeyPEM: string): Promise<void> {
   await request(`/servers/${id}/public-key`, {
     method: 'POST',
